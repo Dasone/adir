@@ -48,6 +48,7 @@ _daliases_check_command_conflict() {
 _daliases_load_shell_aliases() {
     local aliases_file
     aliases_file="$(_daliases_aliases_file)"
+    # shellcheck source=/dev/null
     [[ -f "$aliases_file" ]] && source "$aliases_file"
 }
 
@@ -69,6 +70,7 @@ _daliases_sync_shell_aliases_file() {
     done < "$db"
 
     mv "$tmp_file" "$aliases_file"
+    # shellcheck source=/dev/null
     source "$aliases_file"
 }
 
@@ -309,19 +311,19 @@ _adir_complete() {
     local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
     COMPREPLY=()
     if [[ "$COMP_CWORD" -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "list go pick jump add update del alias check help" -- "$cur") )
+        mapfile -t COMPREPLY < <(compgen -W "list go pick jump add update del alias check help" -- "$cur")
         return 0
     fi
     case "$prev" in
         go|update|del|alias)
-            COMPREPLY=( $(compgen -W "$(_daliases_list_names)" -- "$cur") )
+            mapfile -t COMPREPLY < <(compgen -W "$(_daliases_list_names)" -- "$cur")
             return 0 ;;
         add)
-            [[ "$COMP_CWORD" -eq 3 ]] && COMPREPLY=( $(compgen -d -- "$cur") )
+            [[ "$COMP_CWORD" -eq 3 ]] && mapfile -t COMPREPLY < <(compgen -d -- "$cur")
             return 0 ;;
     esac
-    [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[1]}" == "update" ]] && COMPREPLY=( $(compgen -d -- "$cur") )
-    [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[1]}" == "alias" ]] && COMPREPLY=( $(compgen -W "on off" -- "$cur") )
+    [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[1]}" == "update" ]] && mapfile -t COMPREPLY < <(compgen -d -- "$cur")
+    [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[1]}" == "alias" ]] && mapfile -t COMPREPLY < <(compgen -W "on off" -- "$cur")
 }
 
 complete -F _adir_complete adir
