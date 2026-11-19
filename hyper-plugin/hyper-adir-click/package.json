@@ -1,0 +1,8 @@
+{
+  "name": "hyper-adir-click",
+  "version": "1.0.0",
+  "description": "Click *dir directory aliases in Hyper to jump straight to them",
+  "main": "index.js",
+  "keywords": ["hyper", "plugin", "aliases", "navigation"],
+  "license": "MIT"
+}
