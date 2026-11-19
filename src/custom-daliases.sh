@@ -1,409 +1,328 @@
-# Shared *dir aliases (available to root and all users)
+#!/usr/bin/env bash
+# Custom directory shortcuts & optional shell aliases (adir)
 
-# List active *dir aliases in a clean table
-_daliases_pick_and_cd() {
-    local entries=()
-    local line name target expanded
+_DALIASES_STORE_DEFAULT="${XDG_CONFIG_HOME:-$HOME/.config}/custom-daliases"
+_DALIASES_DB_DEFAULT="${_DALIASES_STORE_DEFAULT}/dirs.tsv"
+_DALIASES_ALIASES_FILE_DEFAULT="${_DALIASES_STORE_DEFAULT}/shell_aliases.sh"
 
-    while IFS=$'\t' read -r name target; do
-        [[ -n "$name" ]] && entries+=("${name}"$'\t'"${target}")
-    done < <(
-        python3 - <<'PYEOF'
-import re
+_daliases_db_path() { echo "${DALIASES_DB_FILE:-$_DALIASES_DB_DEFAULT}"; }
+_daliases_aliases_file() { echo "${DALIASES_SHELL_ALIASES_FILE:-$_DALIASES_ALIASES_FILE_DEFAULT}"; }
+
+_daliases_ensure_store() {
+    local db aliases_file
+    db="$(_daliases_db_path)"
+    aliases_file="$(_daliases_aliases_file)"
+    mkdir -p "$(dirname "$db")" "$(dirname "$aliases_file")"
+    [[ -f "$db" ]] || : > "$db"
+    [[ -f "$aliases_file" ]] || : > "$aliases_file"
+}
+
+_daliases_is_valid_name() {
+    [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]
+}
+
+_daliases_expand_path() {
+    local p="$1"
+    if [[ "$p" == ~* ]]; then
+        eval "printf '%s\n' \"$p\""
+    else
+        printf '%s\n' "$p"
+    fi
+}
+
+_daliases_check_command_conflict() {
+    local name="$1"
+    local existing_type
+    existing_type=$(type -t "$name" 2>/dev/null || true)
+    if [[ -n "$existing_type" ]]; then
+        echo "Conflict: '$name' already exists as a shell $existing_type." >&2
+        return 1
+    fi
+    if command -v "$name" >/dev/null 2>&1; then
+        echo "Conflict: '$name' resolves to '$(command -v "$name")'." >&2
+        return 1
+    fi
+    return 0
+}
+
+_daliases_load_shell_aliases() {
+    local aliases_file
+    aliases_file="$(_daliases_aliases_file)"
+    [[ -f "$aliases_file" ]] && source "$aliases_file"
+}
+
+_daliases_sync_shell_aliases_file() {
+    _daliases_ensure_store
+    local db aliases_file tmp_file
+    db="$(_daliases_db_path)"
+    aliases_file="$(_daliases_aliases_file)"
+    tmp_file="$(mktemp)"
+    : > "$tmp_file"
+
+    while IFS=$'\t' read -r name raw_path promoted; do
+        [[ -z "$name" || -z "$raw_path" ]] && continue
+        if [[ "$promoted" == "1" ]]; then
+            local expanded
+            expanded="$(_daliases_expand_path "$raw_path")"
+            printf 'alias %s=%q\n' "$name" "cd $(printf '%q' "$expanded")" >> "$tmp_file"
+        fi
+    done < "$db"
+
+    mv "$tmp_file" "$aliases_file"
+    source "$aliases_file"
+}
+
+_daliases_get_path() {
+    awk -F'\t' -v k="$1" '$1 == k { print $2; exit }' "$(_daliases_db_path)"
+}
+
+_daliases_list_names() {
+    local db
+    db="$(_daliases_db_path)"
+    [[ -f "$db" ]] && awk -F'\t' 'NF >= 2 && $1 != "" { print $1 }' "$db" | LC_ALL=C sort -u
+}
+
+_daliases_set_row() {
+    local target_name="$1" target_path="$2" mode="$3"
+    local db
+    db="$(_daliases_db_path)"
+    python3 - "$db" "$target_name" "$target_path" "$mode" <<'PYEOF'
+import sys
 from pathlib import Path
 
-pattern = re.compile(r"^\s*alias\s+([^\s=]+dir)=['\"]?cd\s+([^'\"]+)['\"]?")
-for line in Path("/etc/profile.d/custom-daliases.sh").read_text().splitlines():
-    m = pattern.match(line)
-    if m:
-        print(f"{m.group(1)}\t{m.group(2)}")
+db_path = Path(sys.argv[1])
+name, path, mode = sys.argv[2], sys.argv[3], sys.argv[4]
+rows, found = [], False
+
+for line in db_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+    if not line.strip():
+        continue
+    parts = line.split("\t")
+    n = parts[0]
+    p = parts[1] if len(parts) > 1 else ""
+    promo = parts[2] if len(parts) > 2 else "0"
+    if n == name:
+        found = True
+        if mode == "delete":
+            continue
+        new_p = path if path != "" else p
+        new_promo = "1" if mode == "on" else ("0" if mode == "off" else promo)
+        rows.append(f"{n}\t{new_p}\t{new_promo}")
+    else:
+        rows.append(f"{n}\t{p}\t{promo}")
+
+if not found and mode in ("add", "on"):
+    rows.append(f"{name}\t{path}\t{'1' if mode == 'on' else '0'}")
+
+db_path.write_text("\n".join(rows) + ("\n" if rows else ""), encoding="utf-8")
 PYEOF
-    )
+}
 
-    if [[ "${#entries[@]}" -eq 0 ]]; then
-        echo "No *dir aliases found."
-        return 1
+_daliases_add() {
+    local name="$1" raw_path="$2" make_alias=0
+    shift 2 2>/dev/null || true
+    [[ "${1:-}" == "--alias" ]] && make_alias=1
+    if [[ -z "$name" || -z "$raw_path" ]]; then
+        echo "Usage: adir add <name> <path> [--alias]" >&2; return 1
     fi
-
-    local chosen_target=""
-    if command -v fzf >/dev/null 2>&1; then
-        local selected
-        selected=$(printf '%s\n' "${entries[@]}" | fzf --height=~40% --reverse --prompt="Jump to *dir> ") || return 1
-        chosen_target="${selected#*$'\t'}"
-    else
-        printf '%b\n' "\033[1;36mSelect a directory alias to jump to (Enter/number, q to cancel):\033[0m"
-        local i=1 item n t
-        for item in "${entries[@]}"; do
-            n="${item%%$'\t'*}"
-            t="${item#*$'\t'}"
-            printf '  %2d) %-14s -> %s\n' "$i" "$n" "$t"
-            i=$((i + 1))
-        done
-
-        local choice
-        printf '> '
-        read -r choice
-        [[ -z "$choice" || "$choice" == "q" || "$choice" == "Q" ]] && return 1
-
-        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#entries[@]} )); then
-            chosen_target="${entries[$((choice - 1))]#*$'\t'}"
-        else
-            local found=""
-            for item in "${entries[@]}"; do
-                n="${item%%$'\t'*}"
-                t="${item#*$'\t'}"
-                if [[ "$n" == "$choice" ]]; then
-                    found="$t"
-                    break
-                fi
-            done
-            if [[ -z "$found" ]]; then
-                printf '%b\n' "\033[1;31mInvalid selection: ${choice}\033[0m"
-                return 1
-            fi
-            chosen_target="$found"
-        fi
+    if ! _daliases_is_valid_name "$name"; then
+        echo "Invalid name '$name'." >&2; return 1
     fi
-
-    expanded=$(eval echo "$chosen_target" 2>/dev/null) || expanded="$chosen_target"
+    local expanded
+    expanded="$(_daliases_expand_path "$raw_path")"
     if [[ ! -d "$expanded" ]]; then
-        printf '%b\n' "\033[1;31mTarget directory does not exist: ${chosen_target}\033[0m"
+        echo "Directory does not exist: $raw_path" >&2; return 1
+    fi
+    if [[ "$make_alias" -eq 1 ]] && ! _daliases_check_command_conflict "$name"; then
         return 1
     fi
+    _daliases_ensure_store
+    _daliases_set_row "$name" "$raw_path" "$([[ "$make_alias" -eq 1 ]] && echo on || echo add)"
+    [[ "$make_alias" -eq 1 ]] && _daliases_sync_shell_aliases_file
+    echo "Saved '$name' -> $raw_path"
+}
 
-    cd "$expanded" || return 1
+_daliases_update() {
+    local name="$1" raw_path="$2"
+    [[ -z "$name" || -z "$raw_path" ]] && { echo "Usage: adir update <name> <path>" >&2; return 1; }
+    local expanded
+    expanded="$(_daliases_expand_path "$raw_path")"
+    [[ -d "$expanded" ]] || { echo "Directory does not exist: $raw_path" >&2; return 1; }
+    [[ -n "$(_daliases_get_path "$name")" ]] || { echo "Shortcut '$name' not found." >&2; return 1; }
+    _daliases_set_row "$name" "$raw_path" "update"
+    _daliases_sync_shell_aliases_file
+    echo "Updated '$name' -> $raw_path"
+}
+
+_daliases_del() {
+    [[ -z "$1" ]] && { echo "Usage: adir del <name>" >&2; return 1; }
+    unalias "$1" 2>/dev/null || true
+    _daliases_set_row "$1" "" "delete"
+    _daliases_sync_shell_aliases_file
+    echo "Removed '$1'"
+}
+
+_daliases_promote_alias() {
+    local name="$1" mode="${2:-on}"
+    [[ -z "$name" ]] && { echo "Usage: adir alias <name> [on|off]" >&2; return 1; }
+    [[ -n "$(_daliases_get_path "$name")" ]] || { echo "Shortcut '$name' not found." >&2; return 1; }
+    if [[ "$mode" == "off" ]]; then
+        unalias "$name" 2>/dev/null || true
+        _daliases_set_row "$name" "" "off"
+        _daliases_sync_shell_aliases_file
+        echo "Disabled shell alias for '$name'."
+        return 0
+    fi
+    _daliases_check_command_conflict "$name" || return 1
+    _daliases_set_row "$name" "" "on"
+    _daliases_sync_shell_aliases_file
+    echo "Enabled shell alias '$name'."
+}
+
+_daliases_list() {
+    _daliases_ensure_store
+    local db
+    db="$(_daliases_db_path)"
+    [[ -s "$db" ]] || { echo "No shortcuts defined. Use: adir add <name> <path>"; return 0; }
+    printf "%-18s %-8s %s\n" "SHORTCUT" "SHELL" "TARGET"
+    while IFS=$'\t' read -r name raw_path promo; do
+        [[ -z "$name" ]] && continue
+        local expanded flag
+        expanded="$(_daliases_expand_path "$raw_path")"
+        flag=$([[ "$promo" == "1" ]] && echo "alias" || echo "adir")
+        if [[ -d "$expanded" ]]; then
+            printf "%-18s %-8s %s\n" "$name" "$flag" "$raw_path"
+        else
+            printf "\033[31m%-18s %-8s %s [MISSING]\033[0m\n" "$name" "$flag" "$raw_path"
+        fi
+    done < <(LC_ALL=C sort -t$'\t' -k1,1 "$db")
 }
 
 _daliases_go_to() {
-    local target_name="$1"
-    if [[ -z "$target_name" ]]; then
-        echo "Usage: adir go <alias>" >&2
-        return 1
-    fi
-
-    local raw_target=""
-    while IFS=$'\t' read -r name target; do
-        if [[ "$name" == "$target_name" ]]; then
-            raw_target="$target"
-            break
-        fi
-    done < <(
-        python3 - <<'PYEOF'
-import re
-from pathlib import Path
-
-src = Path("/etc/profile.d/custom-daliases.sh")
-if not src.exists():
-    src = Path.home() / ".custom-daliases.sh"
-if not src.exists():
-    raise SystemExit(0)
-
-pattern = re.compile(r"^\s*alias\s+([^\s=]+)=['\"]?cd\s+([^'\"]+)['\"]?")
-for line in src.read_text(encoding="utf-8", errors="ignore").splitlines():
-    m = pattern.match(line)
-    if m:
-        print(f"{m.group(1)}\t{m.group(2)}")
-PYEOF
-    )
-
-    if [[ -z "$raw_target" ]]; then
-        local alias_cmd
-        alias_cmd=$(alias "$target_name" 2>/dev/null || true)
-        if [[ "$alias_cmd" =~ cd[[:space:]]+[\'\"]?([^\'\"[:space:]]+) ]]; then
-            raw_target="${BASH_REMATCH[1]}"
-        fi
-    fi
-
-    if [[ -z "$raw_target" ]]; then
-        echo "Unknown alias: $target_name" >&2
-        return 1
-    fi
-
-    local expanded
-    expanded=$(eval echo "$raw_target" 2>/dev/null) || expanded="$raw_target"
-    if [[ ! -d "$expanded" ]]; then
-        echo "Target directory does not exist: $raw_target" >&2
-        return 1
-    fi
-
+    [[ -z "$1" ]] && { echo "Usage: adir go <name>" >&2; return 1; }
+    local raw_path expanded
+    raw_path="$(_daliases_get_path "$1")"
+    [[ -n "$raw_path" ]] || { echo "Unknown shortcut: $1" >&2; return 1; }
+    expanded="$(_daliases_expand_path "$raw_path")"
+    [[ -d "$expanded" ]] || { echo "Target directory does not exist: $raw_path" >&2; return 1; }
     cd "$expanded" || return 1
 }
 
-_daliases_list_alias_names() {
-    python3 - <<'PYEOF'
-import re
-from pathlib import Path
-
-src = Path("/etc/profile.d/custom-daliases.sh")
-if not src.exists():
-    src = Path.home() / ".custom-daliases.sh"
-if not src.exists():
-    raise SystemExit(0)
-
-pattern = re.compile(r"^\s*alias\s+([^\s=]+dir)=")
-seen = []
-for line in src.read_text(encoding="utf-8", errors="ignore").splitlines():
-    m = pattern.match(line)
-    if m and m.group(1) not in seen:
-        seen.append(m.group(1))
-
-for name in sorted(seen):
-    print(name)
-PYEOF
+_daliases_pick_and_cd() {
+    local names=() n choice
+    while IFS= read -r n; do [[ -n "$n" ]] && names+=("$n"); done < <(_daliases_list_names)
+    [[ "${#names[@]}" -gt 0 ]] || { echo "No shortcuts available." >&2; return 1; }
+    PS3="Select shortcut number: "
+    select choice in "${names[@]}"; do
+        [[ -n "$choice" ]] && { _daliases_go_to "$choice"; return $?; }
+    done
 }
 
-daliases() {
-    if [[ "$1" == "--pick" || "$1" == "-p" || "$1" == "pick" ]]; then
-        _daliases_pick_and_cd
-        return $?
-    fi
-
-    if [[ "$1" == "--help" || "$1" == "-h" || "$1" == "help" ]]; then
-        cat <<'HELPEOF'
-Manage, validate, pick, and jump between *dir directory shortcuts in Bash
-with tab completion and health checks (adir).
-
-Directory Aliases (*dir) — Quick Reference
------------------------------------------
-Unified command (adir):
-  adir                  Show sorted *dir table (same as 'adir list')
-  adir list             Show sorted *dir table (missing paths in red)
-  adir go <alias>       Jump (cd) directly to a *dir alias target
-  adir pick / jump      Interactively select a *dir shortcut and cd into it
-  adir add <name> <path>
-                        Add a new *dir alias and activate in current shell
-  adir update <name> <path>
-                        Update an existing *dir alias target path
-  adir del <name>       Remove an existing *dir cd shortcut
-  adir check            Run read-only diagnostics on setup and paths
-  adir help             Show this help message
-
-  (Long subcommand forms daliases, aliasdir, adddir, updadir, deldir,
-   and checkdir are also accepted after 'adir'.)
-
-Standalone commands:
-  daliases / aliasdir   Show sorted *dir table
-  adddir <name> <path>  Create a new *dir shortcut (target must exist)
-  updadir <name> <path> Update an existing *dir shortcut (target must exist)
-  deldir <name>         Remove a *dir cd shortcut (protects helper aliases)
-  checkdir              Verify functions, tab completion, and target paths
-
-How it loads:
-  Sourced automatically via /etc/profile.d/custom-daliases.sh or ~/.custom-daliases.sh.
-HELPEOF
-        return 0
-    fi
-
-    python3 - <<'PYEOF'
-import os
-import re
-from pathlib import Path
-
-rows = []
-pattern = re.compile(r"^\s*alias\s+([^=\s]+dir)=['\"]?cd\s+([^'\"]+)['\"]?")
-for line in Path('/etc/profile.d/custom-daliases.sh').read_text().splitlines():
-    m = pattern.match(line)
-    if m:
-        rows.append((m.group(1), m.group(2)))
-
-rows.sort(key=lambda r: r[0])
-alias_w = max([len('ALIAS'), len('----')] + [len(a) for a, _ in rows])
-path_w = max([len('PATH'), len('----')] + [len(p) for _, p in rows])
-gap = '    '
-
-hdr_a = f"\033[1;36m{'ALIAS':<{alias_w}}\033[0m"
-hdr_p = f"\033[1;36m{'PATH':<{path_w}}\033[0m"
-print(f"{hdr_a}{gap}{hdr_p}")
-print(f"{'-' * alias_w}{gap}{'-' * path_w}")
-for name, target in rows:
-    expanded = os.path.expandvars(os.path.expanduser(target))
-    exists = Path(expanded).is_dir()
-    if exists:
-        print(f"{name:<{alias_w}}{gap}{target}")
-    else:
-        colored_path = f"\033[1;31m{target}\033[0m"
-        print(f"{name:<{alias_w}}{gap}{colored_path}")
-PYEOF
+_daliases_check() {
+    _daliases_ensure_store
+    local db total=0 missing=0
+    db="$(_daliases_db_path)"
+    echo "Store file : $db"
+    while IFS=$'\t' read -r name raw_path promo; do
+        [[ -z "$name" ]] && continue
+        total=$((total + 1))
+        [[ -d "$(_daliases_expand_path "$raw_path")" ]] || { echo "  [MISSING] $name -> $raw_path"; missing=$((missing + 1)); }
+    done < "$db"
+    echo "Shortcuts  : $total total, $missing missing"
 }
 
-# Add a new *dir alias and load it immediately: adddir <name> <target_path>
+_daliases_help() {
+    local b="[1m" d="[2m" c="[36m" g="[32m" y="[33m" r="[0m"
+    cat <<HELPEOF
 
-# Remove an existing *dir alias: deldir <name>
+${b}${c}====================================================================${r}
+${b}${c}  ADIR — Named Directory Shortcuts & Safe Shell Aliases${r}
+${b}${c}====================================================================${r}
 
-# Update an existing *dir alias path (or add it if missing): updadir <name> <new_target_path>
-adddir() {
-    if [[ "$1" == "--help" || "$1" == "-h" ]]; then
-        cat <<'HELPEOF'
-Usage: adddir <name_ending_in_dir> <target_path>
+${b}WHAT IT IS${r}
+  A lightweight Bash directory jumper that lets you save shortcuts under
+  any name (no *dir suffix required) and jump straight to them with Tab
+  completion or an interactive menu—without cluttering your global shell
+  namespace unless you explicitly opt in.
 
-Create a new *dir shortcut in /etc/profile.d/custom-daliases.sh and
-activate it immediately in the current shell. Fails if the target
-directory does not exist.
+${b}HOW IT WORKS${r}
+  * ${b}Registry-first (${d}dirs.tsv${r}${b}):${r} Shortcuts are stored in your config directory
+    and used inside ${g}adir go <name>${r}, ${g}adir pick${r}, and ${g}adir list${r}.
+  * ${b}Opt-in shell aliases (${d}shell_aliases.sh${r}${b}):${r} Pass ${y}--alias${r} or run
+    ${g}adir alias <name> on${r} to expose a shortcut as a standalone ${g}cd${r} alias
+    outside ${b}adir${r}.
+  * ${b}Collision protection:${r} Before creating any standalone shell alias,
+    ${b}adir${r} checks builtins, keywords, functions, aliases, and ${d}PATH${r} so
+    you never accidentally shadow an existing Linux command.
 
-Example:
-  adddir myprojdir /path/to/dir
+${b}COMMANDS${r}
+  ${g}adir${r} / ${g}adir list${r}        List shortcuts, scope (${d}adir${r} vs ${y}alias${r}), and targets
+  ${g}adir go <name>${r}          Jump directly to a shortcut (${b}Tab${r} completion enabled)
+  ${g}adir pick${r} / ${g}adir jump${r}   Interactive numbered picker to select and ${d}cd${r}
+  ${g}adir add <name> <path>${r}  Save a new shortcut (${d}add --alias${r} to also make alias)
+  ${g}adir update <name> <path>${r}
+                            Update an existing shortcut's target directory
+  ${g}adir del <name>${r}         Delete a shortcut (and remove its alias if active)
+  ${g}adir alias <name> [on|off]${r}
+                            Toggle standalone shell alias outside ${b}adir${r}
+  ${g}adir check${r}              Verify config files and highlight missing paths
+  ${g}adir help${r}               Display this reference
+
+${b}EXAMPLES${r}
+  ${d}# Add a shortcut scoped to adir (no global alias created)${r}
+  adir add notes ~/documents/notes
+  adir go notes
+
+  ${d}# Add a shortcut and expose it as a direct shell command (if safe)${r}
+  adir add proj ~/code/my-project --alias
+  proj
+
+  ${d}# Turn off the standalone alias while keeping the shortcut${r}
+  adir alias proj off
+
+${b}${c}--------------------------------------------------------------------${r}
+${d}Config: \${DALIASES_DB_FILE:-~/.config/custom-daliases/dirs.tsv}${r}
+${b}${c}====================================================================${r}
+
 HELPEOF
-        return 0
-    fi
-
-    local name="$1"
-    local target="$2"
-    local file="/etc/profile.d/custom-daliases.sh"
-
-    if [[ -z "$name" || -z "$target" ]]; then
-        echo "Usage: adddir <name_ending_in_dir> <target_path>"
-        return 1
-    fi
-
-    if [[ ! "$name" =~ ^.+dir$ ]]; then
-        echo "Error: alias name must have text before 'dir' (e.g., projdir)"
-        return 1
-    fi
-
-    local expanded
-    expanded=$(eval echo "$target" 2>/dev/null) || expanded="$target"
-    if [[ ! -d "$expanded" ]]; then
-        printf '\033[1;31mError: target directory does not exist: %s\033[0m\n' "$target"
-        return 1
-    fi
-
-    if grep -qE "^[[:space:]]*alias[[:space:]]+${name}=" "$file"; then
-        echo "Already exists: $name (use 'updadir $name <path>' to change it)"
-        return 1
-    fi
-
-    echo "alias ${name}='cd ${target}'" >> "$file"
-    alias "${name}=cd ${target}"
-    echo "Added: alias ${name}='cd ${target}'"
-}
-
-deldir() {
-    if [[ "$1" == "--help" || "$1" == "-h" ]]; then
-        cat <<'HELPEOF'
-Usage: deldir <name_ending_in_dir>
-
-Remove an existing *dir cd shortcut from /etc/profile.d/custom-daliases.sh
-and unalias it in the current shell. Refuses non-cd helper aliases like
-aliasdir.
-
-Example:
-  deldir ucpdmdir
-HELPEOF
-        return 0
-    fi
-
-    local name="$1"
-    local file="/etc/profile.d/custom-daliases.sh"
-
-    if [[ -z "$name" ]]; then
-        echo "Usage: deldir <name_ending_in_dir>"
-        return 1
-    fi
-
-    if [[ ! "$name" =~ ^.+dir$ ]]; then
-        echo "Error: alias name must end with 'dir' (e.g., projdir)"
-        return 1
-    fi
-
-    local match
-    match=$(grep -E "^[[:space:]]*alias[[:space:]]+${name}=" "$file" | head -n 1)
-    if [[ -z "$match" ]]; then
-        echo "Not found: $name"
-        return 1
-    fi
-
-    local cd_re='=[[:space:]]*['"'"']?cd[[:space:]]+'
-    if [[ ! "$match" =~ $cd_re ]]; then
-        printf '%b\n' "\033[1;31mError: ${name} is not a cd directory shortcut; refusing to remove\033[0m"
-        return 1
-    fi
-
-    sed -i -E "/^[[:space:]]*alias[[:space:]]+${name}=/d" "$file"
-    unalias "$name" 2>/dev/null || true
-    echo "Removed: $name"
 }
 
 adir() {
     local sub="${1:-list}"
-
     case "$sub" in
-        help|--help|-h)
-            daliases --help
-            ;;
-        pick|jump)
-            shift 2>/dev/null || true
-            _daliases_pick_and_cd
-            ;;
-        go)
-            _daliases_go_to "$2"
-            ;;
-        list|daliases|aliasdir)
-            shift 2>/dev/null || true
-            daliases "$@"
-            ;;
-        add|adddir)
-            shift
-            adddir "$@"
-            ;;
-        update|updadir)
-            shift
-            updadir "$@"
-            ;;
-        del|deldir)
-            shift
-            deldir "$@"
-            ;;
-        check|checkdir)
-            shift
-            checkdir "$@"
-            ;;
-        *)
-            printf '%b\n' "\033[1;31mUnknown subcommand: ${sub}\033[0m"
-            echo "Run 'adir help' to see available subcommands."
-            return 1
-            ;;
+        go) _daliases_go_to "$2" ;;
+        list|daliases|aliasdir) _daliases_list ;;
+        pick|jump) _daliases_pick_and_cd ;;
+        add|adddir) shift; _daliases_add "$@" ;;
+        update|updadir) _daliases_update "$2" "$3" ;;
+        del|deldir) _daliases_del "$2" ;;
+        alias) _daliases_promote_alias "$2" "$3" ;;
+        check|checkdir) _daliases_check ;;
+        help|--help|-h) _daliases_help ;;
+        *) echo "Unknown subcommand: $sub" >&2; return 1 ;;
     esac
 }
+
+alias aliasdir='_daliases_list'
 
 _adir_complete() {
-    local cur prev
+    local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
     COMPREPLY=()
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
-
-    local subs="list daliases aliasdir go pick jump add adddir update updadir del deldir check checkdir help"
-
     if [[ "$COMP_CWORD" -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "$subs" -- "$cur") )
+        COMPREPLY=( $(compgen -W "list go pick jump add update del alias check help" -- "$cur") )
         return 0
     fi
-
-    if [[ "$COMP_CWORD" -eq 2 && "$prev" == "go" ]]; then
-        local names
-        names=$(_daliases_list_alias_names)
-        COMPREPLY=( $(compgen -W "$names" -- "$cur") )
-        return 0
-    fi
-
     case "$prev" in
-        update|updadir|del|deldir)
-            local names
-            names=$(_daliases_list_alias_names)
-            COMPREPLY=( $(compgen -W "$names" -- "$cur") )
-            return 0
-            ;;
-        add|adddir)
-            if [[ "$COMP_CWORD" -eq 3 ]]; then
-                COMPREPLY=( $(compgen -d -- "$cur") )
-                return 0
-            fi
-            ;;
+        go|update|del|alias)
+            COMPREPLY=( $(compgen -W "$(_daliases_list_names)" -- "$cur") )
+            return 0 ;;
+        add)
+            [[ "$COMP_CWORD" -eq 3 ]] && COMPREPLY=( $(compgen -d -- "$cur") )
+            return 0 ;;
     esac
-
-    if [[ "$COMP_CWORD" -eq 3 && ( "${COMP_WORDS[1]}" == "update" || "${COMP_WORDS[1]}" == "updadir" ) ]]; then
-        COMPREPLY=( $(compgen -d -- "$cur") )
-        return 0
-    fi
+    [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[1]}" == "update" ]] && COMPREPLY=( $(compgen -d -- "$cur") )
+    [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[1]}" == "alias" ]] && COMPREPLY=( $(compgen -W "on off" -- "$cur") )
 }
 
-complete -o filenames -F _adir_complete adir
+complete -F _adir_complete adir
+_daliases_load_shell_aliases
