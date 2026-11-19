@@ -74,6 +74,84 @@ PYEOF
     cd "$expanded" || return 1
 }
 
+_daliases_go_to() {
+    local target_name="$1"
+    if [[ -z "$target_name" ]]; then
+        echo "Usage: adir go <alias>" >&2
+        return 1
+    fi
+
+    local raw_target=""
+    while IFS=$'\t' read -r name target; do
+        if [[ "$name" == "$target_name" ]]; then
+            raw_target="$target"
+            break
+        fi
+    done < <(
+        python3 - <<'PYEOF'
+import re
+from pathlib import Path
+
+src = Path("/etc/profile.d/custom-daliases.sh")
+if not src.exists():
+    src = Path.home() / ".custom-daliases.sh"
+if not src.exists():
+    raise SystemExit(0)
+
+pattern = re.compile(r"^\s*alias\s+([^\s=]+)=['\"]?cd\s+([^'\"]+)['\"]?")
+for line in src.read_text(encoding="utf-8", errors="ignore").splitlines():
+    m = pattern.match(line)
+    if m:
+        print(f"{m.group(1)}\t{m.group(2)}")
+PYEOF
+    )
+
+    if [[ -z "$raw_target" ]]; then
+        local alias_cmd
+        alias_cmd=$(alias "$target_name" 2>/dev/null || true)
+        if [[ "$alias_cmd" =~ cd[[:space:]]+[\'\"]?([^\'\"[:space:]]+) ]]; then
+            raw_target="${BASH_REMATCH[1]}"
+        fi
+    fi
+
+    if [[ -z "$raw_target" ]]; then
+        echo "Unknown alias: $target_name" >&2
+        return 1
+    fi
+
+    local expanded
+    expanded=$(eval echo "$raw_target" 2>/dev/null) || expanded="$raw_target"
+    if [[ ! -d "$expanded" ]]; then
+        echo "Target directory does not exist: $raw_target" >&2
+        return 1
+    fi
+
+    cd "$expanded" || return 1
+}
+
+_daliases_list_alias_names() {
+    python3 - <<'PYEOF'
+import re
+from pathlib import Path
+
+src = Path("/etc/profile.d/custom-daliases.sh")
+if not src.exists():
+    src = Path.home() / ".custom-daliases.sh"
+if not src.exists():
+    raise SystemExit(0)
+
+pattern = re.compile(r"^\s*alias\s+([^\s=]+dir)=")
+seen = []
+for line in src.read_text(encoding="utf-8", errors="ignore").splitlines():
+    m = pattern.match(line)
+    if m and m.group(1) not in seen:
+        seen.append(m.group(1))
+
+for name in sorted(seen):
+    print(name)
+PYEOF
+}
+
 daliases() {
     if [[ "$1" == "--pick" || "$1" == "-p" || "$1" == "pick" ]]; then
         _daliases_pick_and_cd
@@ -83,13 +161,14 @@ daliases() {
     if [[ "$1" == "--help" || "$1" == "-h" || "$1" == "help" ]]; then
         cat <<'HELPEOF'
 Manage, validate, pick, and jump between *dir directory shortcuts in Bash
-with tab completion, health checks (adir), and optional Hyper click support.
+with tab completion and health checks (adir).
 
 Directory Aliases (*dir) — Quick Reference
 -----------------------------------------
 Unified command (adir):
   adir                  Show sorted *dir table (same as 'adir list')
   adir list             Show sorted *dir table (missing paths in red)
+  adir go <alias>       Jump (cd) directly to a *dir alias target
   adir pick / jump      Interactively select a *dir shortcut and cd into it
   adir add <name> <path>
                         Add a new *dir alias and activate in current shell
@@ -244,8 +323,6 @@ HELPEOF
     echo "Removed: $name"
 }
 
-upd
-
 adir() {
     local sub="${1:-list}"
 
@@ -256,6 +333,9 @@ adir() {
         pick|jump)
             shift 2>/dev/null || true
             _daliases_pick_and_cd
+            ;;
+        go)
+            _daliases_go_to "$2"
             ;;
         list|daliases|aliasdir)
             shift 2>/dev/null || true
@@ -286,48 +366,43 @@ adir() {
 }
 
 _adir_complete() {
-    local cur="${COMP_WORDS[COMP_CWORD]}"
-    local sub="${COMP_WORDS[1]}"
-    local subs="list daliases aliasdir pick jump add adddir update updadir del deldir check checkdir help"
+    local cur prev
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    local subs="list daliases aliasdir go pick jump add adddir update updadir del deldir check checkdir help"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$subs" -- "$cur") )
         return 0
     fi
 
-    if [[ "$COMP_CWORD" -eq 2 ]]; then
-        case "$sub" in
-            update|updadir|del|deldir)
-                local file="/etc/profile.d/custom-daliases.sh"
-                local names
-                if [[ -f "$file" ]]; then
-                    names=$(sed -nE "s/^[[:space:]]*alias[[:space:]]+([^[:space:]=]+dir)=['\"]?cd[[:space:]].*/\1/p" "$file")
-                    COMPREPLY=( $(compgen -W "$names" -- "$cur") )
-                fi
-                return 0
-                ;;
-        esac
+    if [[ "$COMP_CWORD" -eq 2 && "$prev" == "go" ]]; then
+        local names
+        names=$(_daliases_list_alias_names)
+        COMPREPLY=( $(compgen -W "$names" -- "$cur") )
+        return 0
     fi
 
-    if [[ "$COMP_CWORD" -eq 3 ]]; then
-        case "$sub" in
-            update|updadir|add|adddir)
-                local expanded="$cur"
-                if [[ "$cur" == ~* ]]; then
-                    expanded=$(eval echo "$cur" 2>/dev/null) || expanded="$cur"
-                fi
-                local IFS=$'\n'
-                COMPREPLY=( $(compgen -d -- "$expanded") )
-                if [[ "$cur" == ~* && "${#COMPREPLY[@]}" -gt 0 ]]; then
-                    local home_prefix="$HOME"
-                    local i
-                    for i in "${!COMPREPLY[@]}"; do
-                        COMPREPLY[$i]="${COMPREPLY[$i]/#$home_prefix/~}"
-                    done
-                fi
+    case "$prev" in
+        update|updadir|del|deldir)
+            local names
+            names=$(_daliases_list_alias_names)
+            COMPREPLY=( $(compgen -W "$names" -- "$cur") )
+            return 0
+            ;;
+        add|adddir)
+            if [[ "$COMP_CWORD" -eq 3 ]]; then
+                COMPREPLY=( $(compgen -d -- "$cur") )
                 return 0
-                ;;
-        esac
+            fi
+            ;;
+    esac
+
+    if [[ "$COMP_CWORD" -eq 3 && ( "${COMP_WORDS[1]}" == "update" || "${COMP_WORDS[1]}" == "updadir" ) ]]; then
+        COMPREPLY=( $(compgen -d -- "$cur") )
+        return 0
     fi
 }
 

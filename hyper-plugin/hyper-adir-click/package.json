@@ -1,8 +1,0 @@
-{
-  "name": "hyper-adir-click",
-  "version": "1.1.0",
-  "description": "Optional Hyper add-on (not the full custom-daliases setup): click *dir alias names in Hyper to send them to your active shell",
-  "main": "index.js",
-  "keywords": ["hyper", "plugin", "aliases", "navigation"],
-  "license": "MIT"
-}
