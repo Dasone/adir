@@ -227,7 +227,11 @@ _daliases_list() {
         [[ "$found" -eq 1 ]] || { echo "Shortcut '$want' not found." >&2; return 1; }
         return 0
     fi
-    [[ -s "$db" ]] || { echo "No shortcuts defined. Use: adir add <name> <path>"; return 0; }
+    [[ -s "$db" ]] || {
+        echo "No shortcuts defined. Use: adir add <name> <path>"
+        echo "Type 'adir help' for more info."
+        return 0
+    }
     printf "%-18s %-8s %s\n" "SHORTCUT" "SHELL" "TARGET"
     while IFS=$'\t' read -r name raw_path promo; do
         [[ -z "$name" ]] && continue
