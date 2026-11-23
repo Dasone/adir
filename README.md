@@ -26,21 +26,22 @@ When you *do* want a shortcut to work as a direct command outside `adir`, you ca
 
 ![adir quick start: a terminal session with every adir command highlighted in purple](docs/quickstart.png)
 
-*Every `adir` command is highlighted in purple; everything else is normal shell output. The same commands, grouped, to copy:*
+*Every `adir` command is highlighted in purple; everything else is normal shell output. The commands below are the same, grouped and ready to copy (`adir pick` and `adir history` are interactive, so the screenshot leaves them out; `adir history` is in the demo above).*
 
 ### 1. Save places
 
 ```bash
+adir add docs ~/Documents          # save any path
+adir add api ~/work/api --alias    # also create a real `api` command that jumps there
 cd ~/code/my-blog
 adir add blog .                    # save the directory you are in (stored as an absolute path)
-adir add docs ~/Documents          # or save any path
-adir add api ~/work/api --alias    # also create a real `api` command that jumps there
 ```
 
 ### 2. Go there
 
 ```bash
-adir blog          # jump to a shortcut (short for: adir go blog)
+adir blog          # jump to a shortcut
+adir docs          # ...and straight on to another one
 adir pick          # choose from a numbered menu
 adir history       # your last 10 jumps: move with ↑/↓, Enter to go
 ```
