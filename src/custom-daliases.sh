@@ -17,6 +17,17 @@ _daliases_ensure_store() {
     [[ -f "$aliases_file" ]] || : > "$aliases_file"
 }
 
+# Subcommand names that cannot be used as shortcut names (so `adir <name>` is unambiguous)
+_DALIASES_RESERVED_NAMES="go list daliases aliasdir pick jump add adddir update updadir del deldir alias check checkdir help"
+
+_daliases_is_reserved_name() {
+    local w
+    for w in $_DALIASES_RESERVED_NAMES; do
+        [[ "$1" == "$w" ]] && return 0
+    done
+    return 1
+}
+
 _daliases_is_valid_name() {
     [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]
 }
@@ -49,7 +60,10 @@ _daliases_load_shell_aliases() {
     local aliases_file
     aliases_file="$(_daliases_aliases_file)"
     # shellcheck source=/dev/null
-    [[ -f "$aliases_file" ]] && source "$aliases_file"
+    if [[ -f "$aliases_file" ]]; then
+        source "$aliases_file"
+    fi
+    return 0
 }
 
 _daliases_sync_shell_aliases_file() {
@@ -130,6 +144,20 @@ _daliases_add() {
     if ! _daliases_is_valid_name "$name"; then
         echo "Invalid name '$name'." >&2; return 1
     fi
+    if _daliases_is_reserved_name "$name"; then
+        echo "'$name' is a reserved adir command and cannot be used as a shortcut name." >&2; return 1
+    fi
+    # Resolve relative paths (e.g. ".", "..", "sub/dir") to absolute ones
+    case "$raw_path" in
+        /*|~*|\$*) ;;
+        *)
+            local resolved
+            resolved="$(cd -- "$raw_path" 2>/dev/null && pwd -P)" || {
+                echo "Directory does not exist: $raw_path" >&2; return 1
+            }
+            raw_path="$resolved"
+            ;;
+    esac
     local expanded
     expanded="$(_daliases_expand_path "$raw_path")"
     if [[ ! -d "$expanded" ]]; then
@@ -185,6 +213,17 @@ _daliases_list() {
     _daliases_ensure_store
     local db
     db="$(_daliases_db_path)"
+    if [[ -n "${1:-}" ]]; then
+        local want="$1" n p promo found=0
+        while IFS=$'\t' read -r n p promo; do
+            [[ "$n" == "$want" ]] || continue
+            found=1
+            printf 'Shortcut: %s\nShell: %s\nTarget: "%s"\n' "$n" "$([[ "$promo" == "1" ]] && echo alias || echo adir)" "$p"
+            [[ -d "$(_daliases_expand_path "$p")" ]] || printf '\033[31m[MISSING]\033[0m\n'
+        done < "$db"
+        [[ "$found" -eq 1 ]] || { echo "Shortcut '$want' not found." >&2; return 1; }
+        return 0
+    fi
     [[ -s "$db" ]] || { echo "No shortcuts defined. Use: adir add <name> <path>"; return 0; }
     printf "%-18s %-8s %s\n" "SHORTCUT" "SHELL" "TARGET"
     while IFS=$'\t' read -r name raw_path promo; do
@@ -260,7 +299,9 @@ ${b}HOW IT WORKS${r}
 ${b}COMMANDS${r}
   ${g}adir${r} / ${g}adir list${r}        List shortcuts, scope (${d}adir${r} vs ${y}alias${r}), and targets
   ${g}adir go <name>${r}          Jump directly to a shortcut (${b}Tab${r} completion enabled)
+  ${g}adir <name>${r}             Shorthand for ${d}adir go <name>${r} (command names are reserved)
   ${g}adir pick${r} / ${g}adir jump${r}   Interactive numbered picker to select and ${d}cd${r}
+  ${g}adir list <name>${r}        Show details for one shortcut
   ${g}adir add <name> <path>${r}  Save a new shortcut (${d}add --alias${r} to also make alias)
   ${g}adir update <name> <path>${r}
                             Update an existing shortcut's target directory
@@ -274,6 +315,9 @@ ${b}EXAMPLES${r}
   ${d}# Add a shortcut scoped to adir (no global alias created)${r}
   adir add notes ~/documents/notes
   adir go notes
+
+  ${d}# Save the current directory (relative paths are stored as absolute)${r}
+  adir add here .
 
   ${d}# Add a shortcut and expose it as a direct shell command (if safe)${r}
   adir add proj ~/code/my-project --alias
@@ -293,7 +337,7 @@ adir() {
     local sub="${1:-list}"
     case "$sub" in
         go) _daliases_go_to "$2" ;;
-        list|daliases|aliasdir) _daliases_list ;;
+        list|daliases|aliasdir) _daliases_list "$2" ;;
         pick|jump) _daliases_pick_and_cd ;;
         add|adddir) shift; _daliases_add "$@" ;;
         update|updadir) _daliases_update "$2" "$3" ;;
@@ -301,7 +345,13 @@ adir() {
         alias) _daliases_promote_alias "$2" "$3" ;;
         check|checkdir) _daliases_check ;;
         help|--help|-h) _daliases_help ;;
-        *) echo "Unknown subcommand: $sub" >&2; return 1 ;;
+        *)
+            if [[ -n "$(_daliases_get_path "$sub")" ]]; then
+                _daliases_go_to "$sub"
+            else
+                echo "Unknown subcommand or shortcut: $sub" >&2; return 1
+            fi
+            ;;
     esac
 }
 
@@ -311,7 +361,7 @@ _adir_complete() {
     local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
     COMPREPLY=()
     if [[ "$COMP_CWORD" -eq 1 ]]; then
-        mapfile -t COMPREPLY < <(compgen -W "list go pick jump add update del alias check help" -- "$cur")
+        mapfile -t COMPREPLY < <(compgen -W "list go pick jump add update del alias check help $(_daliases_list_names)" -- "$cur")
         return 0
     fi
     case "$prev" in

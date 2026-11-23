@@ -5,9 +5,11 @@
 | Command | Description |
 | :--- | :--- |
 | `adir` / `adir list` | List saved shortcuts, scope (`adir` vs `alias`), and target paths (highlighting missing paths) |
+| `adir list <name>` | Show details (shortcut, scope, target) for a single shortcut |
 | `adir go <name>` | Jump (`cd`) directly to a shortcut (`Tab` completion supported) |
+| `adir <name>` | Shorthand for `adir go <name>`; built-in command names always take precedence |
 | `adir pick` / `adir jump` | Open an interactive numbered menu to choose a shortcut and `cd` into it |
-| `adir add <name> <path> [--alias]` | Add a shortcut, optionally promoting it to a standalone shell alias |
+| `adir add <name> <path> [--alias]` | Add a shortcut, optionally promoting it to a standalone shell alias. `.` or any relative path is saved as an absolute path (e.g. `adir add here .`). Names of `adir` commands are reserved and rejected |
 | `adir update <name> <path>` | Update the target directory of an existing shortcut |
 | `adir del <name>` | Remove a shortcut and any standalone shell alias created for it |
 | `adir alias <name> [on\|off]` | Enable or disable a standalone shell alias outside `adir` (with conflict checking) |
@@ -29,5 +31,20 @@ proj
 adir alias docs on
 adir alias proj off
 
-# 4. Check for broken/missing directories
+# 4. Save the directory you are currently in
+cd /root/work/project/myproject
+adir add myproject .
+adir list myproject
+# Shortcut: myproject
+# Shell: adir
+# Target: "/root/work/project/myproject"
+
+# 5. Jump without "go"
+adir myproject
+
+# 6. Reserved names are rejected
+adir add list .
+# 'list' is a reserved adir command and cannot be used as a shortcut name.
+
+# 7. Check for broken/missing directories
 adir check
