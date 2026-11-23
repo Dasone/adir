@@ -6,7 +6,7 @@ A lightweight directory-navigation tool (`adir`) for **Bash and Zsh**, for savin
 
 ## Overview
 
-Instead of scattering dozens of `cd` aliases across your shell dotfiles, shortcuts are stored in a registry (`~/.config/custom-daliases/dirs.tsv` by default) and you jump to them with the `adir` command.
+Instead of scattering dozens of `cd` aliases across your shell dotfiles, shortcuts are stored in a registry (`~/.config/adir/dirs.tsv` by default) and you jump to them with the `adir` command.
 
 When you *do* want a shortcut to work as a direct command outside `adir`, you can opt in with `--alias` or `adir alias <name> on`. Before creating a standalone alias, `adir` checks existing builtins, keywords, functions, aliases, and `PATH` entries so it won't shadow existing Linux commands.
 
@@ -20,7 +20,7 @@ When you *do* want a shortcut to work as a direct command outside `adir`, you ca
 - **Inspect a single shortcut**: `adir list <name>` shows its name, scope, and target.
 - **Safe opt-in shell aliases**: Keep shortcuts scoped to `adir` by default, or promote individual ones to standalone `cd` aliases with automatic command-conflict checks.
 - **Health & path validation**: Verify directories exist and spot missing targets with `adir list` and `adir check`.
-- **Configurable storage**: Override paths via `DALIASES_DB_FILE` and `DALIASES_SHELL_ALIASES_FILE` when needed.
+- **Configurable storage**: Override paths via `ADIR_DB_FILE` and `ADIR_SHELL_ALIASES_FILE` when needed.
 
 ## Quick start
 
@@ -81,10 +81,10 @@ Works in **Bash** (Linux, WSL2, macOS, Git Bash) and **Zsh**. Requires `python3`
 git clone https://github.com/Dasone/adir.git
 cd adir
 bash install.sh
-source /etc/profile.d/custom-daliases.sh 2>/dev/null || source ~/.custom-daliases.sh
+source /etc/profile.d/adir.sh 2>/dev/null || source ~/.adir.sh
 ```
 
-`install.sh` installs the script system-wide to `/etc/profile.d/` (or to `~/.custom-daliases.sh` when it can't write there) and adds a `source` line to your shell startup file, once, so every new terminal has `adir`:
+`install.sh` installs the script system-wide to `/etc/profile.d/` (or to `~/.adir.sh` when it can't write there) and adds a `source` line to your shell startup file, once, so every new terminal has `adir`:
 
 - **Bash:** a line is added to `~/.bashrc`. This matters because `/etc/profile.d` is only read by *login* shells, while most terminal tabs start non-login interactive shells.
 - **Zsh:** if you use zsh (`~/.zshrc` exists or zsh is your login shell), a line is added to `~/.zshrc`. Tab completion registers itself automatically, whether the line comes before or after `compinit`.

@@ -2,41 +2,41 @@
 # Custom directory shortcuts & optional shell aliases (adir)
 # Works in Bash and Zsh: source this file from your shell startup file.
 
-_DALIASES_STORE_DEFAULT="${XDG_CONFIG_HOME:-$HOME/.config}/custom-daliases"
-_DALIASES_DB_DEFAULT="${_DALIASES_STORE_DEFAULT}/dirs.tsv"
-_DALIASES_ALIASES_FILE_DEFAULT="${_DALIASES_STORE_DEFAULT}/shell_aliases.sh"
+_ADIR_STORE_DEFAULT="${XDG_CONFIG_HOME:-$HOME/.config}/adir"
+_ADIR_DB_DEFAULT="${_ADIR_STORE_DEFAULT}/dirs.tsv"
+_ADIR_ALIASES_FILE_DEFAULT="${_ADIR_STORE_DEFAULT}/shell_aliases.sh"
 
-_DALIASES_HISTORY_MAX=10
-_daliases_history_file() { echo "${DALIASES_HISTORY_FILE:-$(dirname "$(_daliases_db_path)")/history}"; }
+_ADIR_HISTORY_MAX=10
+_adir_history_file() { echo "${ADIR_HISTORY_FILE:-$(dirname "$(_adir_db_path)")/history}"; }
 
-_daliases_db_path() { echo "${DALIASES_DB_FILE:-$_DALIASES_DB_DEFAULT}"; }
-_daliases_aliases_file() { echo "${DALIASES_SHELL_ALIASES_FILE:-$_DALIASES_ALIASES_FILE_DEFAULT}"; }
+_adir_db_path() { echo "${ADIR_DB_FILE:-$_ADIR_DB_DEFAULT}"; }
+_adir_aliases_file() { echo "${ADIR_SHELL_ALIASES_FILE:-$_ADIR_ALIASES_FILE_DEFAULT}"; }
 
-_daliases_ensure_store() {
+_adir_ensure_store() {
     local db aliases_file
-    db="$(_daliases_db_path)"
-    aliases_file="$(_daliases_aliases_file)"
+    db="$(_adir_db_path)"
+    aliases_file="$(_adir_aliases_file)"
     mkdir -p "$(dirname "$db")" "$(dirname "$aliases_file")"
     [[ -f "$db" ]] || : > "$db"
     [[ -f "$aliases_file" ]] || : > "$aliases_file"
 }
 
 # Subcommand names that cannot be used as shortcut names (so `adir <name>` is unambiguous)
-_DALIASES_RESERVED_NAMES="history hist go list daliases aliasdir pick jump add adddir update updadir del deldir alias check checkdir help"
+_ADIR_RESERVED_NAMES="history hist go list aliasdir pick jump add adddir update updadir del deldir alias check checkdir help"
 
-_daliases_is_reserved_name() {
+_adir_is_reserved_name() {
     local w
-    for w in $_DALIASES_RESERVED_NAMES; do
+    for w in $_ADIR_RESERVED_NAMES; do
         [[ "$1" == "$w" ]] && return 0
     done
     return 1
 }
 
-_daliases_is_valid_name() {
+_adir_is_valid_name() {
     [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]
 }
 
-_daliases_expand_path() {
+_adir_expand_path() {
     local p="$1"
     if [[ "$p" == ~* ]]; then
         eval "printf '%s\n' \"$p\""
@@ -46,7 +46,7 @@ _daliases_expand_path() {
 }
 
 # Prints alias|keyword|function|builtin|file for an existing command, nothing otherwise
-_daliases_cmd_type() {
+_adir_cmd_type() {
     if [[ -n "${ZSH_VERSION-}" ]]; then
         local t
         t="$(whence -w -- "$1" 2>/dev/null)" || return 0
@@ -63,26 +63,26 @@ _daliases_cmd_type() {
 }
 
 # Read one key / the rest of an escape sequence into the variable named by $1
-_daliases_read_key() {
+_adir_read_key() {
     if [[ -n "${ZSH_VERSION-}" ]]; then IFS= read -rsk1 "$1"; else IFS= read -rsn1 "$1"; fi
 }
-_daliases_read_seq() {
+_adir_read_seq() {
     if [[ -n "${ZSH_VERSION-}" ]]; then IFS= read -rsk2 -t 0.05 "$1"; else IFS= read -rsn2 -t 0.05 "$1"; fi
 }
 
 # Turn a relative path (".", "..", "sub/dir") into an absolute one. Absolute paths,
 # ~ and $VAR paths are returned as typed. Fails if a relative path is not a directory.
-_daliases_absolute_path() {
+_adir_absolute_path() {
     case "$1" in
         /*|~*|\$*) printf '%s\n' "$1" ;;
         *) (CDPATH= cd -- "$1" 2>/dev/null && pwd -P) ;;
     esac
 }
 
-_daliases_check_command_conflict() {
+_adir_check_command_conflict() {
     local name="$1"
     local existing_type
-    existing_type="$(_daliases_cmd_type "$name")"
+    existing_type="$(_adir_cmd_type "$name")"
     if [[ -n "$existing_type" ]]; then
         echo "Conflict: '$name' already exists as a shell $existing_type." >&2
         return 1
@@ -94,9 +94,9 @@ _daliases_check_command_conflict() {
     return 0
 }
 
-_daliases_load_shell_aliases() {
+_adir_load_shell_aliases() {
     local aliases_file
-    aliases_file="$(_daliases_aliases_file)"
+    aliases_file="$(_adir_aliases_file)"
     # shellcheck source=/dev/null
     if [[ -f "$aliases_file" ]]; then
         source "$aliases_file"
@@ -104,18 +104,18 @@ _daliases_load_shell_aliases() {
     return 0
 }
 
-_daliases_sync_shell_aliases_file() {
-    _daliases_ensure_store
+_adir_sync_shell_aliases_file() {
+    _adir_ensure_store
     local db aliases_file tmp_file name raw_path promoted expanded
-    db="$(_daliases_db_path)"
-    aliases_file="$(_daliases_aliases_file)"
+    db="$(_adir_db_path)"
+    aliases_file="$(_adir_aliases_file)"
     tmp_file="$(mktemp)"
     : > "$tmp_file"
 
     while IFS=$'\t' read -r name raw_path promoted; do
         [[ -z "$name" || -z "$raw_path" ]] && continue
         if [[ "$promoted" == "1" ]]; then
-            expanded="$(_daliases_expand_path "$raw_path")"
+            expanded="$(_adir_expand_path "$raw_path")"
             printf 'alias %s=%q\n' "$name" "cd $(printf '%q' "$expanded")" >> "$tmp_file"
         fi
     done < "$db"
@@ -125,20 +125,20 @@ _daliases_sync_shell_aliases_file() {
     source "$aliases_file"
 }
 
-_daliases_get_path() {
-    awk -F'\t' -v k="$1" '$1 == k { print $2; exit }' "$(_daliases_db_path)"
+_adir_get_path() {
+    awk -F'\t' -v k="$1" '$1 == k { print $2; exit }' "$(_adir_db_path)"
 }
 
-_daliases_list_names() {
+_adir_list_names() {
     local db
-    db="$(_daliases_db_path)"
+    db="$(_adir_db_path)"
     [[ -f "$db" ]] && awk -F'\t' 'NF >= 2 && $1 != "" { print $1 }' "$db" | LC_ALL=C sort -u
 }
 
-_daliases_set_row() {
+_adir_set_row() {
     local target_name="$1" target_path="$2" mode="$3"
     local db
-    db="$(_daliases_db_path)"
+    db="$(_adir_db_path)"
     python3 - "$db" "$target_name" "$target_path" "$mode" <<'PYEOF'
 import sys
 from pathlib import Path
@@ -171,82 +171,82 @@ db_path.write_text("\n".join(rows) + ("\n" if rows else ""), encoding="utf-8")
 PYEOF
 }
 
-_daliases_add() {
+_adir_add() {
     local name="$1" raw_path="$2" make_alias=0
     shift 2 2>/dev/null || true
     [[ "${1:-}" == "--alias" ]] && make_alias=1
     if [[ -z "$name" || -z "$raw_path" ]]; then
         echo "Usage: adir add <name> <path> [--alias]" >&2; return 1
     fi
-    if ! _daliases_is_valid_name "$name"; then
+    if ! _adir_is_valid_name "$name"; then
         echo "Invalid name '$name'." >&2; return 1
     fi
-    if _daliases_is_reserved_name "$name"; then
+    if _adir_is_reserved_name "$name"; then
         echo "'$name' is a reserved adir command and cannot be used as a shortcut name." >&2; return 1
     fi
     # Resolve relative paths (e.g. ".", "..", "sub/dir") to absolute ones
     local resolved
-    resolved="$(_daliases_absolute_path "$raw_path")" || {
+    resolved="$(_adir_absolute_path "$raw_path")" || {
         echo "Directory does not exist: $raw_path" >&2; return 1
     }
     raw_path="$resolved"
     local expanded
-    expanded="$(_daliases_expand_path "$raw_path")"
+    expanded="$(_adir_expand_path "$raw_path")"
     if [[ ! -d "$expanded" ]]; then
         echo "Directory does not exist: $raw_path" >&2; return 1
     fi
-    if [[ "$make_alias" -eq 1 ]] && ! _daliases_check_command_conflict "$name"; then
+    if [[ "$make_alias" -eq 1 ]] && ! _adir_check_command_conflict "$name"; then
         return 1
     fi
-    _daliases_ensure_store
-    _daliases_set_row "$name" "$raw_path" "$([[ "$make_alias" -eq 1 ]] && echo on || echo add)"
-    [[ "$make_alias" -eq 1 ]] && _daliases_sync_shell_aliases_file
+    _adir_ensure_store
+    _adir_set_row "$name" "$raw_path" "$([[ "$make_alias" -eq 1 ]] && echo on || echo add)"
+    [[ "$make_alias" -eq 1 ]] && _adir_sync_shell_aliases_file
     echo "Saved '$name' -> $raw_path"
 }
 
-_daliases_update() {
+_adir_update() {
     local name="$1" raw_path="$2"
     [[ -z "$name" || -z "$raw_path" ]] && { echo "Usage: adir update <name> <path>" >&2; return 1; }
     local resolved expanded
-    resolved="$(_daliases_absolute_path "$raw_path")" || {
+    resolved="$(_adir_absolute_path "$raw_path")" || {
         echo "Directory does not exist: $raw_path" >&2; return 1
     }
     raw_path="$resolved"
-    expanded="$(_daliases_expand_path "$raw_path")"
+    expanded="$(_adir_expand_path "$raw_path")"
     [[ -d "$expanded" ]] || { echo "Directory does not exist: $raw_path" >&2; return 1; }
-    [[ -n "$(_daliases_get_path "$name")" ]] || { echo "Shortcut '$name' not found." >&2; return 1; }
-    _daliases_set_row "$name" "$raw_path" "update"
-    _daliases_sync_shell_aliases_file
+    [[ -n "$(_adir_get_path "$name")" ]] || { echo "Shortcut '$name' not found." >&2; return 1; }
+    _adir_set_row "$name" "$raw_path" "update"
+    _adir_sync_shell_aliases_file
     echo "Updated '$name' -> $raw_path"
 }
 
-_daliases_del() {
+_adir_del() {
     [[ -z "$1" ]] && { echo "Usage: adir del <name>" >&2; return 1; }
     unalias "$1" 2>/dev/null || true
-    _daliases_set_row "$1" "" "delete"
-    _daliases_sync_shell_aliases_file
+    _adir_set_row "$1" "" "delete"
+    _adir_sync_shell_aliases_file
     echo "Removed '$1'"
 }
 
-_daliases_promote_alias() {
+_adir_promote_alias() {
     local name="$1" mode="${2:-on}"
     [[ -z "$name" ]] && { echo "Usage: adir alias <name> [on|off]" >&2; return 1; }
-    [[ -n "$(_daliases_get_path "$name")" ]] || { echo "Shortcut '$name' not found." >&2; return 1; }
+    [[ -n "$(_adir_get_path "$name")" ]] || { echo "Shortcut '$name' not found." >&2; return 1; }
     if [[ "$mode" == "off" ]]; then
         unalias "$name" 2>/dev/null || true
-        _daliases_set_row "$name" "" "off"
-        _daliases_sync_shell_aliases_file
+        _adir_set_row "$name" "" "off"
+        _adir_sync_shell_aliases_file
         echo "Disabled shell alias for '$name'."
         return 0
     fi
-    _daliases_check_command_conflict "$name" || return 1
-    _daliases_set_row "$name" "" "on"
-    _daliases_sync_shell_aliases_file
+    _adir_check_command_conflict "$name" || return 1
+    _adir_set_row "$name" "" "on"
+    _adir_sync_shell_aliases_file
     echo "Enabled shell alias '$name'."
 }
 
 # Colours for list output (same palette as `adir help`); plain when piped or NO_COLOR is set
-_daliases_colors() {
+_adir_colors() {
     if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
         C_B=$'\033[1m'; C_D=$'\033[2m'; C_C=$'\033[36m'; C_G=$'\033[32m'
         C_Y=$'\033[33m'; C_R=$'\033[31m'; C_0=$'\033[0m'
@@ -255,11 +255,11 @@ _daliases_colors() {
     fi
 }
 
-_daliases_list() {
-    _daliases_ensure_store
+_adir_list() {
+    _adir_ensure_store
     local db C_B C_D C_C C_G C_Y C_R C_0
-    db="$(_daliases_db_path)"
-    _daliases_colors
+    db="$(_adir_db_path)"
+    _adir_colors
 
     if [[ -n "${1:-}" ]]; then
         local want="$1" n p promo found=0 scope
@@ -272,7 +272,7 @@ _daliases_list() {
             printf '  %sShortcut:%s %s%s%s\n' "$C_B$C_C" "$C_0" "$C_G" "$n" "$C_0"
             printf '  %sShell:%s    %s\n' "$C_B$C_C" "$C_0" "$scope"
             printf '  %sTarget:%s   "%s"\n' "$C_B$C_C" "$C_0" "$p"
-            [[ -d "$(_daliases_expand_path "$p")" ]] || printf '  %s[MISSING] directory does not exist%s\n' "$C_R" "$C_0"
+            [[ -d "$(_adir_expand_path "$p")" ]] || printf '  %s[MISSING] directory does not exist%s\n' "$C_R" "$C_0"
             printf '\n'
         done < "$db"
         [[ "$found" -eq 1 ]] || { echo "Shortcut '$want' not found." >&2; return 1; }
@@ -303,7 +303,7 @@ _daliases_list() {
         total=$((total + 1))
         pad=$(printf '%*s' $((w - ${#name})) '')
         if [[ "$promo" == "1" ]]; then scope="${C_Y}alias  ${C_0}"; else scope="${C_D}adir   ${C_0}"; fi
-        if [[ -d "$(_daliases_expand_path "$raw_path")" ]]; then
+        if [[ -d "$(_adir_expand_path "$raw_path")" ]]; then
             printf '  %s%s%s%s %s %s\n' "$C_G" "$name" "$C_0" "$pad" "$scope" "$raw_path"
         else
             missing=$((missing + 1))
@@ -315,37 +315,37 @@ _daliases_list() {
     printf ' · adir help for more info%s\n\n' "$C_0"
 }
 
-_daliases_go_to() {
+_adir_go_to() {
     [[ -z "$1" ]] && { echo "Usage: adir go <name>" >&2; return 1; }
     local raw_path expanded
-    raw_path="$(_daliases_get_path "$1")"
+    raw_path="$(_adir_get_path "$1")"
     [[ -n "$raw_path" ]] || { echo "Unknown shortcut: $1" >&2; return 1; }
-    expanded="$(_daliases_expand_path "$raw_path")"
+    expanded="$(_adir_expand_path "$raw_path")"
     [[ -d "$expanded" ]] || { echo "Target directory does not exist: $raw_path" >&2; return 1; }
     cd "$expanded" || return 1
-    _daliases_history_add "$1"
+    _adir_history_add "$1"
 }
 
-# Record a visited shortcut: newest last, no duplicates, at most $_DALIASES_HISTORY_MAX entries
-_daliases_history_add() {
+# Record a visited shortcut: newest last, no duplicates, at most $_ADIR_HISTORY_MAX entries
+_adir_history_add() {
     local hist tmp
-    hist="$(_daliases_history_file)"
+    hist="$(_adir_history_file)"
     mkdir -p "$(dirname "$hist")" 2>/dev/null || return 0
     tmp="$(mktemp 2>/dev/null)" || return 0
-    { [[ -f "$hist" ]] && grep -vxF -- "$1" "$hist"; printf '%s\n' "$1"; } | tail -n "$_DALIASES_HISTORY_MAX" > "$tmp"
+    { [[ -f "$hist" ]] && grep -vxF -- "$1" "$hist"; printf '%s\n' "$1"; } | tail -n "$_ADIR_HISTORY_MAX" > "$tmp"
     mv "$tmp" "$hist"
     return 0
 }
 
 # adir history: arrow-key selector over recently visited shortcuts (bottom = most recent)
-_daliases_history() {
+_adir_history() {
     local hist name raw_path
     local names=() targets=()
-    hist="$(_daliases_history_file)"
+    hist="$(_adir_history_file)"
     if [[ -f "$hist" ]]; then
         while IFS= read -r name; do
             [[ -z "$name" ]] && continue
-            raw_path="$(_daliases_get_path "$name")"
+            raw_path="$(_adir_get_path "$name")"
             [[ -n "$raw_path" ]] || continue   # shortcut was deleted since
             names+=("$name"); targets+=("$raw_path")
         done < "$hist"
@@ -365,13 +365,23 @@ _daliases_history() {
     local sel=$((count - 1)) key rest first=1
     local rev=$'\033[7m' off=$'\033[0m' dim=$'\033[2m' red=$'\033[31m'
 
+    # Terminal width, so every row stays on ONE line (the redraw/erase move up a fixed number of rows)
+    local cols="${COLUMNS:-}"
+    [[ "$cols" =~ ^[0-9]+$ ]] || cols="$(tput cols 2>/dev/null)"
+    [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
+
     _adir_hist_draw() {
-        local j line
+        local j line pth miss room
         if [[ "$first" -eq 0 ]]; then printf '\033[%dA' $((count + 1)); fi
         first=0
         for ((j = 0; j < count; j++)); do
-            line="$(printf '%-*s  %s' "$w" "${names[j]}" "${targets[j]}")"
-            [[ -d "$(_daliases_expand_path "${targets[j]}")" ]] || line="${line} [MISSING]"
+            pth="${targets[j]}"; miss=""
+            [[ -d "$(_adir_expand_path "$pth")" ]] || miss=" [MISSING]"
+            room=$((cols - 6 - w - ${#miss}))
+            (( room < 12 )) && room=12
+            # keep the END of a long path (the informative part) and mark the cut with an ellipsis
+            (( ${#pth} > room )) && pth="…${pth: -$((room - 1))}"
+            line="$(printf '%-*s  %s%s' "$w" "${names[j]}" "$pth" "$miss")"
             if [[ "$j" -eq "$sel" ]]; then
                 printf '\r\033[K %s> %s%s\n' "$rev" "$line" "$off"
             else
@@ -387,11 +397,11 @@ _daliases_history() {
     printf '\033[?25l'
     _adir_hist_draw
     while true; do
-        _daliases_read_key key || { printf '\033[?25h'; return 1; }
+        _adir_read_key key || { printf '\033[?25h'; return 1; }
         case "$key" in
             $'\033')
                 rest=""
-                _daliases_read_seq rest || true
+                _adir_read_seq rest || true
                 case "$rest" in
                     '[A'|'OA') (( sel > 0 )) && sel=$((sel - 1)) ;;
                     '[B'|'OB') (( sel < count - 1 )) && sel=$((sel + 1)) ;;
@@ -400,36 +410,36 @@ _daliases_history() {
             k) (( sel > 0 )) && sel=$((sel - 1)) ;;
             j) (( sel < count - 1 )) && sel=$((sel + 1)) ;;
             q) _adir_hist_erase; return 0 ;;
-            ''|$'\n'|$'\r') _adir_hist_erase; _daliases_go_to "${names[sel]}"; return $? ;;
+            ''|$'\n'|$'\r') _adir_hist_erase; _adir_go_to "${names[sel]}"; return $? ;;
         esac
         _adir_hist_draw
     done
 }
 
-_daliases_pick_and_cd() {
+_adir_pick_and_cd() {
     local names=() n choice
-    while IFS= read -r n; do [[ -n "$n" ]] && names+=("$n"); done < <(_daliases_list_names)
+    while IFS= read -r n; do [[ -n "$n" ]] && names+=("$n"); done < <(_adir_list_names)
     [[ "${#names[@]}" -gt 0 ]] || { echo "No shortcuts available." >&2; return 1; }
     PS3="Select shortcut number: "
     select choice in "${names[@]}"; do
-        [[ -n "$choice" ]] && { _daliases_go_to "$choice"; return $?; }
+        [[ -n "$choice" ]] && { _adir_go_to "$choice"; return $?; }
     done
 }
 
-_daliases_check() {
-    _daliases_ensure_store
+_adir_check() {
+    _adir_ensure_store
     local db total=0 missing=0 name raw_path promo
-    db="$(_daliases_db_path)"
+    db="$(_adir_db_path)"
     echo "Store file : $db"
     while IFS=$'\t' read -r name raw_path promo; do
         [[ -z "$name" ]] && continue
         total=$((total + 1))
-        [[ -d "$(_daliases_expand_path "$raw_path")" ]] || { echo "  [MISSING] $name -> $raw_path"; missing=$((missing + 1)); }
+        [[ -d "$(_adir_expand_path "$raw_path")" ]] || { echo "  [MISSING] $name -> $raw_path"; missing=$((missing + 1)); }
     done < "$db"
     echo "Shortcuts  : $total total, $missing missing"
 }
 
-_daliases_help() {
+_adir_help() {
     local b="[1m" d="[2m" c="[36m" g="[32m" y="[33m" r="[0m"
     cat <<HELPEOF
 
@@ -485,7 +495,7 @@ ${b}EXAMPLES${r}
   adir alias proj off
 
 ${b}${c}--------------------------------------------------------------------${r}
-${d}Config: \${DALIASES_DB_FILE:-~/.config/custom-daliases/dirs.tsv}${r}
+${d}Config: \${ADIR_DB_FILE:-~/.config/adir/dirs.tsv}${r}
 ${b}${c}====================================================================${r}
 
 HELPEOF
@@ -496,19 +506,19 @@ adir() {
     [[ -n "${ZSH_VERSION-}" ]] && emulate -L ksh
     local sub="${1:-list}"
     case "$sub" in
-        go) _daliases_go_to "$2" ;;
-        list|daliases|aliasdir) _daliases_list "$2" ;;
-        pick|jump) _daliases_pick_and_cd ;;
-        history|hist) _daliases_history ;;
-        add|adddir) shift; _daliases_add "$@" ;;
-        update|updadir) _daliases_update "$2" "$3" ;;
-        del|deldir) _daliases_del "$2" ;;
-        alias) _daliases_promote_alias "$2" "$3" ;;
-        check|checkdir) _daliases_check ;;
-        help|--help|-h) _daliases_help ;;
+        go) _adir_go_to "$2" ;;
+        list|aliasdir) _adir_list "$2" ;;
+        pick|jump) _adir_pick_and_cd ;;
+        history|hist) _adir_history ;;
+        add|adddir) shift; _adir_add "$@" ;;
+        update|updadir) _adir_update "$2" "$3" ;;
+        del|deldir) _adir_del "$2" ;;
+        alias) _adir_promote_alias "$2" "$3" ;;
+        check|checkdir) _adir_check ;;
+        help|--help|-h) _adir_help ;;
         *)
-            if [[ -n "$(_daliases_get_path "$sub")" ]]; then
-                _daliases_go_to "$sub"
+            if [[ -n "$(_adir_get_path "$sub")" ]]; then
+                _adir_go_to "$sub"
             else
                 echo "Unknown subcommand or shortcut: $sub" >&2; return 1
             fi
@@ -516,19 +526,19 @@ adir() {
     esac
 }
 
-alias aliasdir='_daliases_list'
+alias aliasdir='_adir_list'
 
 if [[ -n "${BASH_VERSION-}" ]]; then
     _adir_complete() {
         local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
         COMPREPLY=()
         if [[ "$COMP_CWORD" -eq 1 ]]; then
-            mapfile -t COMPREPLY < <(compgen -W "list go pick jump history add update del alias check help $(_daliases_list_names)" -- "$cur")
+            mapfile -t COMPREPLY < <(compgen -W "list go pick jump history add update del alias check help $(_adir_list_names)" -- "$cur")
             return 0
         fi
         case "$prev" in
             go|update|del|alias|list)
-                mapfile -t COMPREPLY < <(compgen -W "$(_daliases_list_names)" -- "$cur")
+                mapfile -t COMPREPLY < <(compgen -W "$(_adir_list_names)" -- "$cur")
                 return 0 ;;
             add)
                 [[ "$COMP_CWORD" -eq 3 ]] && mapfile -t COMPREPLY < <(compgen -d -- "$cur")
@@ -545,7 +555,7 @@ elif [[ -n "${ZSH_VERSION-}" ]]; then
     eval '
     _adir_zsh_complete() {
         local -a names
-        names=(${(f)"$(_daliases_list_names)"})
+        names=(${(f)"$(_adir_list_names)"})
         if (( CURRENT == 2 )); then
             compadd -- list go pick jump history add update del alias check help $names
             return
@@ -572,4 +582,4 @@ elif [[ -n "${ZSH_VERSION-}" ]]; then
     '
 fi
 
-_daliases_load_shell_aliases
+_adir_load_shell_aliases

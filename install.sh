@@ -2,7 +2,7 @@
 set -e
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC_FILE="$REPO_DIR/src/custom-daliases.sh"
+SRC_FILE="$REPO_DIR/src/adir.sh"
 
 if [[ ! -f "$SRC_FILE" ]]; then
     echo "Error: Could not find $SRC_FILE" >&2
@@ -10,7 +10,7 @@ if [[ ! -f "$SRC_FILE" ]]; then
 fi
 
 if [[ -w /etc/profile.d ]] || command -v sudo >/dev/null 2>&1; then
-    TARGET="/etc/profile.d/custom-daliases.sh"
+    TARGET="/etc/profile.d/adir.sh"
     if [[ -w /etc/profile.d ]]; then
         cp "$SRC_FILE" "$TARGET"
         chmod 644 "$TARGET"
@@ -20,7 +20,7 @@ if [[ -w /etc/profile.d ]] || command -v sudo >/dev/null 2>&1; then
     fi
     echo "Installed system-wide to $TARGET"
 else
-    TARGET="$HOME/.custom-daliases.sh"
+    TARGET="$HOME/.adir.sh"
     cp "$SRC_FILE" "$TARGET"
     chmod 644 "$TARGET"
     for rc in "$HOME/.bashrc" "$HOME/.bash_profile"; do
@@ -35,7 +35,7 @@ fi
 add_source_line() {
     local rc="$1"
     if ! grep -qF "$TARGET" "$rc" 2>/dev/null; then
-        printf '\n# custom-daliases (adir)\n[[ -f "%s" ]] && source "%s"\n' "$TARGET" "$TARGET" >> "$rc"
+        printf '\n# adir\n[[ -f "%s" ]] && source "%s"\n' "$TARGET" "$TARGET" >> "$rc"
         echo "Added source line to $rc"
     fi
 }
