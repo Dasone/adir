@@ -1,6 +1,8 @@
 # custom-daliases
 
-A lightweight Bash directory-navigation tool (`adir`) for saving named directory shortcuts, jumping with tab completion or an interactive picker, checking for broken paths, and optionally promoting shortcuts to standalone shell aliases with built-in command conflict checks.
+A lightweight directory-navigation tool (`adir`) for **Bash and Zsh**, for saving named directory shortcuts, jumping with tab completion or an interactive picker, checking for broken paths, and optionally promoting shortcuts to standalone shell aliases with built-in command conflict checks.
+
+![adir demo](docs/demo.gif)
 
 ## Overview
 
@@ -32,7 +34,7 @@ adir proj              # jump back (same as: adir go proj)
 
 ## Installation
 
-Works in Bash on Linux, WSL2, macOS, and Git Bash (requires `bash` and `python3`):
+Works in **Bash** (Linux, WSL2, macOS, Git Bash) and **Zsh**. Requires `python3`.
 
 ```bash
 git clone https://github.com/Dasone/custom-daliases.git
@@ -41,8 +43,32 @@ bash install.sh
 source /etc/profile.d/custom-daliases.sh 2>/dev/null || source ~/.custom-daliases.sh
 ```
 
-## Starting a new shell session
-Running install.sh installs the script for future/login sessions. Run source in your current terminal session to load adir immediately. If a non-login interactive shell doesn't source /etc/profile.d/ automatically, you can also source it from ~/.bashrc.
+`install.sh` installs the script system-wide to `/etc/profile.d/` (or to `~/.custom-daliases.sh` when it can't write there).
+
+- **Bash:** login shells pick it up automatically. For non-login interactive shells, source it from `~/.bashrc`.
+- **Zsh:** zsh doesn't read `/etc/profile.d`, so `install.sh` also adds a `source` line to `~/.zshrc` (only once) when zsh is installed. Tab completion registers itself automatically, whether the line comes before or after `compinit`.
+
+Run the `source` command above in your current terminal to start using `adir` immediately; new shells load it by themselves.
+
+## How it compares
+
+Bookmarking directories under a name is a well-trodden idea, and there are good tools for it. `adir` is not the only way to do this; this is how it fits in:
+
+| Tool | Approach | Shells |
+| :--- | :--- | :--- |
+| [`wd`](https://github.com/mfaerevaag/wd) | Named bookmarks ("warp directory") | zsh |
+| [`goto`](https://github.com/iridakos/goto) | Named aliases for directories with completion | bash, zsh |
+| [`bashmarks`](https://github.com/huyng/bashmarks) | Bookmarks via short commands | bash |
+| [`zoxide`](https://github.com/ajeetdsouza/zoxide), [`autojump`](https://github.com/wting/autojump), [`z`](https://github.com/rupa/z) | Jump by *frecency* (how often and how recently you visit); no names to manage | bash, zsh, fish and more |
+| **`adir`** | Named bookmarks + recent history + opt-in real aliases | bash, zsh |
+
+If you want to type a few letters of a path and land in the most-used match, a frecency tool like `zoxide` is a better fit, and it combines well with `adir`. If you prefer explicit names that you control, `adir` is aimed at you. What it adds on top of plain named bookmarks:
+
+- **Safe standalone aliases:** promote a shortcut to a real shell alias, with a check that it won't shadow a builtin, keyword, function, alias or `PATH` command.
+- **Unambiguous `adir <name>`:** the names of `adir`'s own commands are reserved, so a shortcut can never hide a command.
+- **Arrow-key history:** `adir history` shows your last 10 visited shortcuts with no fuzzy-finder dependency.
+- **Save where you are:** `adir add <name> .` stores the absolute path of the current directory.
+- **Plain-text storage:** shortcuts live in a small tab-separated file you can read, edit and back up.
 
 ## License
 

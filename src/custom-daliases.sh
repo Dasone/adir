@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Custom directory shortcuts & optional shell aliases (adir)
+# Works in Bash and Zsh: source this file from your shell startup file.
 
 _DALIASES_STORE_DEFAULT="${XDG_CONFIG_HOME:-$HOME/.config}/custom-daliases"
 _DALIASES_DB_DEFAULT="${_DALIASES_STORE_DEFAULT}/dirs.tsv"
@@ -44,10 +45,35 @@ _daliases_expand_path() {
     fi
 }
 
+# Prints alias|keyword|function|builtin|file for an existing command, nothing otherwise
+_daliases_cmd_type() {
+    if [[ -n "${ZSH_VERSION-}" ]]; then
+        local t
+        t="$(whence -w -- "$1" 2>/dev/null)" || return 0
+        t="${t##*: }"
+        case "$t" in
+            none|"") ;;
+            command) echo file ;;
+            reserved) echo keyword ;;
+            *) echo "$t" ;;
+        esac
+    else
+        type -t "$1" 2>/dev/null || true
+    fi
+}
+
+# Read one key / the rest of an escape sequence into the variable named by $1
+_daliases_read_key() {
+    if [[ -n "${ZSH_VERSION-}" ]]; then IFS= read -rsk1 "$1"; else IFS= read -rsn1 "$1"; fi
+}
+_daliases_read_seq() {
+    if [[ -n "${ZSH_VERSION-}" ]]; then IFS= read -rsk2 -t 0.05 "$1"; else IFS= read -rsn2 -t 0.05 "$1"; fi
+}
+
 _daliases_check_command_conflict() {
     local name="$1"
     local existing_type
-    existing_type=$(type -t "$name" 2>/dev/null || true)
+    existing_type="$(_daliases_cmd_type "$name")"
     if [[ -n "$existing_type" ]]; then
         echo "Conflict: '$name' already exists as a shell $existing_type." >&2
         return 1
@@ -71,7 +97,7 @@ _daliases_load_shell_aliases() {
 
 _daliases_sync_shell_aliases_file() {
     _daliases_ensure_store
-    local db aliases_file tmp_file
+    local db aliases_file tmp_file name raw_path promoted expanded
     db="$(_daliases_db_path)"
     aliases_file="$(_daliases_aliases_file)"
     tmp_file="$(mktemp)"
@@ -80,7 +106,6 @@ _daliases_sync_shell_aliases_file() {
     while IFS=$'\t' read -r name raw_path promoted; do
         [[ -z "$name" || -z "$raw_path" ]] && continue
         if [[ "$promoted" == "1" ]]; then
-            local expanded
             expanded="$(_daliases_expand_path "$raw_path")"
             printf 'alias %s=%q\n' "$name" "cd $(printf '%q' "$expanded")" >> "$tmp_file"
         fi
@@ -307,14 +332,14 @@ _daliases_history_add() {
 # adir history: arrow-key selector over recently visited shortcuts (bottom = most recent)
 _daliases_history() {
     local hist name raw_path
-    local names=() paths=()
+    local names=() targets=()
     hist="$(_daliases_history_file)"
     if [[ -f "$hist" ]]; then
         while IFS= read -r name; do
             [[ -z "$name" ]] && continue
             raw_path="$(_daliases_get_path "$name")"
             [[ -n "$raw_path" ]] || continue   # shortcut was deleted since
-            names+=("$name"); paths+=("$raw_path")
+            names+=("$name"); targets+=("$raw_path")
         done < "$hist"
     fi
     local count="${#names[@]}"
@@ -325,7 +350,7 @@ _daliases_history() {
 
     # Not a terminal: just print the list
     if [[ ! -t 0 || ! -t 1 ]]; then
-        for ((i = 0; i < count; i++)); do printf '%-*s  %s\n' "$w" "${names[i]}" "${paths[i]}"; done
+        for ((i = 0; i < count; i++)); do printf '%-*s  %s\n' "$w" "${names[i]}" "${targets[i]}"; done
         return 0
     fi
 
@@ -337,8 +362,8 @@ _daliases_history() {
         if [[ "$first" -eq 0 ]]; then printf '\033[%dA' $((count + 1)); fi
         first=0
         for ((j = 0; j < count; j++)); do
-            line="$(printf '%-*s  %s' "$w" "${names[j]}" "${paths[j]}")"
-            [[ -d "$(_daliases_expand_path "${paths[j]}")" ]] || line="${line} [MISSING]"
+            line="$(printf '%-*s  %s' "$w" "${names[j]}" "${targets[j]}")"
+            [[ -d "$(_daliases_expand_path "${targets[j]}")" ]] || line="${line} [MISSING]"
             if [[ "$j" -eq "$sel" ]]; then
                 printf '\r\033[K %s> %s%s\n' "$rev" "$line" "$off"
             else
@@ -351,11 +376,11 @@ _daliases_history() {
     printf '\033[?25l'
     _adir_hist_draw
     while true; do
-        IFS= read -rsn1 key || { printf '\033[?25h'; return 1; }
+        _daliases_read_key key || { printf '\033[?25h'; return 1; }
         case "$key" in
             $'\033')
                 rest=""
-                read -rsn2 -t 0.05 rest || true
+                _daliases_read_seq rest || true
                 case "$rest" in
                     '[A'|'OA') (( sel > 0 )) && sel=$((sel - 1)) ;;
                     '[B'|'OB') (( sel < count - 1 )) && sel=$((sel + 1)) ;;
@@ -364,7 +389,7 @@ _daliases_history() {
             k) (( sel > 0 )) && sel=$((sel - 1)) ;;
             j) (( sel < count - 1 )) && sel=$((sel + 1)) ;;
             q) printf '\033[?25h'; return 0 ;;
-            '') printf '\033[?25h'; _daliases_go_to "${names[sel]}"; return $? ;;
+            ''|$'\n'|$'\r') printf '\033[?25h'; _daliases_go_to "${names[sel]}"; return $? ;;
         esac
         _adir_hist_draw
     done
@@ -382,7 +407,7 @@ _daliases_pick_and_cd() {
 
 _daliases_check() {
     _daliases_ensure_store
-    local db total=0 missing=0
+    local db total=0 missing=0 name raw_path promo
     db="$(_daliases_db_path)"
     echo "Store file : $db"
     while IFS=$'\t' read -r name raw_path promo; do
@@ -402,7 +427,7 @@ ${b}${c}  ADIR — Named Directory Shortcuts & Safe Shell Aliases${r}
 ${b}${c}====================================================================${r}
 
 ${b}WHAT IT IS${r}
-  A lightweight Bash directory jumper that lets you save shortcuts under
+  A lightweight Bash/Zsh directory jumper that lets you save shortcuts under
   any name (no *dir suffix required) and jump straight to them with Tab
   completion or an interactive menu—without cluttering your global shell
   namespace unless you explicitly opt in.
@@ -456,6 +481,8 @@ HELPEOF
 }
 
 adir() {
+    # In zsh, run in ksh-compatible mode (0-based arrays, word splitting) so the Bash code works unchanged
+    [[ -n "${ZSH_VERSION-}" ]] && emulate -L ksh
     local sub="${1:-list}"
     case "$sub" in
         go) _daliases_go_to "$2" ;;
@@ -480,24 +507,58 @@ adir() {
 
 alias aliasdir='_daliases_list'
 
-_adir_complete() {
-    local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
-    COMPREPLY=()
-    if [[ "$COMP_CWORD" -eq 1 ]]; then
-        mapfile -t COMPREPLY < <(compgen -W "list go pick jump history add update del alias check help $(_daliases_list_names)" -- "$cur")
-        return 0
-    fi
-    case "$prev" in
-        go|update|del|alias)
-            mapfile -t COMPREPLY < <(compgen -W "$(_daliases_list_names)" -- "$cur")
-            return 0 ;;
-        add)
-            [[ "$COMP_CWORD" -eq 3 ]] && mapfile -t COMPREPLY < <(compgen -d -- "$cur")
-            return 0 ;;
-    esac
-    [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[1]}" == "update" ]] && mapfile -t COMPREPLY < <(compgen -d -- "$cur")
-    [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[1]}" == "alias" ]] && mapfile -t COMPREPLY < <(compgen -W "on off" -- "$cur")
-}
+if [[ -n "${BASH_VERSION-}" ]]; then
+    _adir_complete() {
+        local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
+        COMPREPLY=()
+        if [[ "$COMP_CWORD" -eq 1 ]]; then
+            mapfile -t COMPREPLY < <(compgen -W "list go pick jump history add update del alias check help $(_daliases_list_names)" -- "$cur")
+            return 0
+        fi
+        case "$prev" in
+            go|update|del|alias|list)
+                mapfile -t COMPREPLY < <(compgen -W "$(_daliases_list_names)" -- "$cur")
+                return 0 ;;
+            add)
+                [[ "$COMP_CWORD" -eq 3 ]] && mapfile -t COMPREPLY < <(compgen -d -- "$cur")
+                return 0 ;;
+        esac
+        [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[1]}" == "update" ]] && mapfile -t COMPREPLY < <(compgen -d -- "$cur")
+        [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[1]}" == "alias" ]] && mapfile -t COMPREPLY < <(compgen -W "on off" -- "$cur")
+    }
 
-complete -F _adir_complete adir
+    complete -F _adir_complete adir
+elif [[ -n "${ZSH_VERSION-}" ]]; then
+    # zsh-only syntax lives in eval so Bash never has to parse it.
+    # Registered with compdef when the completion system is loaded (source this file after compinit).
+    eval '
+    _adir_zsh_complete() {
+        local -a names
+        names=(${(f)"$(_daliases_list_names)"})
+        if (( CURRENT == 2 )); then
+            compadd -- list go pick jump history add update del alias check help $names
+            return
+        fi
+        case ${words[2]} in
+            go|del|list) (( CURRENT == 3 )) && compadd -- $names ;;
+            update) if (( CURRENT == 3 )); then compadd -- $names; else _path_files -/; fi ;;
+            alias) if (( CURRENT == 3 )); then compadd -- $names; else compadd -- on off; fi ;;
+            add) (( CURRENT == 3 )) || _path_files -/ ;;
+        esac
+    }
+    if (( ${+functions[compdef]} )); then
+        compdef _adir_zsh_complete adir
+    else
+        # compinit has not run yet: register on the first prompt instead
+        _adir_late_compdef() {
+            if (( ${+functions[compdef]} )); then
+                compdef _adir_zsh_complete adir
+                add-zsh-hook -d precmd _adir_late_compdef
+            fi
+        }
+        autoload -Uz add-zsh-hook && add-zsh-hook precmd _adir_late_compdef
+    fi
+    '
+fi
+
 _daliases_load_shell_aliases

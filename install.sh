@@ -30,3 +30,11 @@ else
     done
     echo "Installed to $TARGET"
 fi
+
+# zsh does not read /etc/profile.d or ~/.bashrc, so source the script from ~/.zshrc
+if command -v zsh >/dev/null 2>&1 || [[ -f "$HOME/.zshrc" ]]; then
+    if ! grep -qF "$TARGET" "$HOME/.zshrc" 2>/dev/null; then
+        printf '\n# custom-daliases (adir)\n[[ -f "%s" ]] && source "%s"\n' "$TARGET" "$TARGET" >> "$HOME/.zshrc"
+        echo "Added source line to $HOME/.zshrc (zsh)"
+    fi
+fi
