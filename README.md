@@ -24,13 +24,53 @@ When you *do* want a shortcut to work as a direct command outside `adir`, you ca
 
 ## Quick start
 
+![adir quick start: a terminal session with every adir command highlighted in purple](docs/quickstart.png)
+
+*Every `adir` command is highlighted in purple; everything else is normal shell output. The same commands, grouped, to copy:*
+
+### 1. Save places
+
 ```bash
-cd ~/code/my-project
-adir add proj .        # save the current directory as "proj"
-adir list proj         # show details for one shortcut
-cd /
-adir proj              # jump back (same as: adir go proj)
+cd ~/code/my-blog
+adir add blog .                    # save the directory you are in (stored as an absolute path)
+adir add docs ~/Documents          # or save any path
+adir add api ~/work/api --alias    # also create a real `api` command that jumps there
 ```
+
+### 2. Go there
+
+```bash
+adir blog          # jump to a shortcut (short for: adir go blog)
+adir pick          # choose from a numbered menu
+adir history       # your last 10 jumps: move with ↑/↓, Enter to go
+```
+
+`Tab` completes commands and shortcut names.
+
+### 3. See what you have
+
+```bash
+adir               # all shortcuts with scope and target (same as: adir list)
+adir list api      # details for a single shortcut
+```
+
+### 4. Change things
+
+```bash
+adir update docs ~/Notes    # point a shortcut at another directory
+adir alias blog on          # make it a real shell command (refuses to shadow an existing command)
+adir alias api off          # back to adir-only
+adir del docs               # remove a shortcut (and its alias, if it has one)
+```
+
+### 5. Housekeeping
+
+```bash
+adir check         # find shortcuts whose directory no longer exists
+adir help          # the full reference, with examples
+```
+
+More detail on every command is in [USAGE.md](USAGE.md).
 
 ## Installation
 
