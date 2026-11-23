@@ -381,6 +381,9 @@ _daliases_history() {
         printf '\r\033[K%s  ↑/↓ move · Enter go · q/Esc cancel%s\n' "$dim" "$off"
     }
 
+    # Remove the selector from the screen again (cursor goes back to where it started)
+    _adir_hist_erase() { printf '\033[%dA\r\033[J\033[?25h' $((count + 1)); }
+
     printf '\033[?25l'
     _adir_hist_draw
     while true; do
@@ -392,12 +395,12 @@ _daliases_history() {
                 case "$rest" in
                     '[A'|'OA') (( sel > 0 )) && sel=$((sel - 1)) ;;
                     '[B'|'OB') (( sel < count - 1 )) && sel=$((sel + 1)) ;;
-                    '') printf '\033[?25h'; return 0 ;;
+                    '') _adir_hist_erase; return 0 ;;
                 esac ;;
             k) (( sel > 0 )) && sel=$((sel - 1)) ;;
             j) (( sel < count - 1 )) && sel=$((sel + 1)) ;;
-            q) printf '\033[?25h'; return 0 ;;
-            ''|$'\n'|$'\r') printf '\033[?25h'; _daliases_go_to "${names[sel]}"; return $? ;;
+            q) _adir_hist_erase; return 0 ;;
+            ''|$'\n'|$'\r') _adir_hist_erase; _daliases_go_to "${names[sel]}"; return $? ;;
         esac
         _adir_hist_draw
     done
