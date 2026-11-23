@@ -212,38 +212,74 @@ _daliases_promote_alias() {
     echo "Enabled shell alias '$name'."
 }
 
+# Colours for list output (same palette as `adir help`); plain when piped or NO_COLOR is set
+_daliases_colors() {
+    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+        C_B=$'\033[1m'; C_D=$'\033[2m'; C_C=$'\033[36m'; C_G=$'\033[32m'
+        C_Y=$'\033[33m'; C_R=$'\033[31m'; C_0=$'\033[0m'
+    else
+        C_B=""; C_D=""; C_C=""; C_G=""; C_Y=""; C_R=""; C_0=""
+    fi
+}
+
 _daliases_list() {
     _daliases_ensure_store
-    local db
+    local db C_B C_D C_C C_G C_Y C_R C_0
     db="$(_daliases_db_path)"
+    _daliases_colors
+
     if [[ -n "${1:-}" ]]; then
-        local want="$1" n p promo found=0
+        local want="$1" n p promo found=0 scope
         while IFS=$'\t' read -r n p promo; do
             [[ "$n" == "$want" ]] || continue
             found=1
-            printf 'Shortcut: %s\nShell: %s\nTarget: "%s"\n' "$n" "$([[ "$promo" == "1" ]] && echo alias || echo adir)" "$p"
-            [[ -d "$(_daliases_expand_path "$p")" ]] || printf '\033[31m[MISSING]\033[0m\n'
+            scope="${C_D}adir${C_0}"
+            [[ "$promo" == "1" ]] && scope="${C_Y}alias${C_0}"
+            printf '\n'
+            printf '  %sShortcut:%s %s%s%s\n' "$C_B$C_C" "$C_0" "$C_G" "$n" "$C_0"
+            printf '  %sShell:%s    %s\n' "$C_B$C_C" "$C_0" "$scope"
+            printf '  %sTarget:%s   "%s"\n' "$C_B$C_C" "$C_0" "$p"
+            [[ -d "$(_daliases_expand_path "$p")" ]] || printf '  %s[MISSING] directory does not exist%s\n' "$C_R" "$C_0"
+            printf '\n'
         done < "$db"
         [[ "$found" -eq 1 ]] || { echo "Shortcut '$want' not found." >&2; return 1; }
         return 0
     fi
-    [[ -s "$db" ]] || {
-        echo "No shortcuts defined. Use: adir add <name> <path>"
-        echo "Type 'adir help' for more info."
+
+    if [[ ! -s "$db" ]]; then
+        printf '\n  %sNo shortcuts defined yet.%s\n' "$C_B" "$C_0"
+        printf '  Add one with %sadir add <name> <path>%s\n' "$C_G" "$C_0"
+        printf '  Type %sadir help%s for more info.\n\n' "$C_G" "$C_0"
         return 0
-    }
-    printf "%-18s %-8s %s\n" "SHORTCUT" "SHELL" "TARGET"
+    fi
+
+    local rows=() name raw_path promo w=8 total=0 missing=0
     while IFS=$'\t' read -r name raw_path promo; do
         [[ -z "$name" ]] && continue
-        local expanded flag
-        expanded="$(_daliases_expand_path "$raw_path")"
-        flag=$([[ "$promo" == "1" ]] && echo "alias" || echo "adir")
-        if [[ -d "$expanded" ]]; then
-            printf "%-18s %-8s %s\n" "$name" "$flag" "$raw_path"
-        else
-            printf "\033[31m%-18s %-8s %s [MISSING]\033[0m\n" "$name" "$flag" "$raw_path"
-        fi
+        rows+=("$name"$'\t'"$raw_path"$'\t'"$promo")
+        (( ${#name} > w )) && w=${#name}
     done < <(LC_ALL=C sort -t$'\t' -k1,1 "$db")
+    w=$((w + 3))
+
+    printf '\n'
+    printf '  %s%-*s %-7s %s%s\n' "$C_B$C_C" "$w" "SHORTCUT" "SCOPE" "TARGET" "$C_0"
+    printf '  %s%s%s\n' "$C_D" "$(printf '%*s' $((w + 8 + 30)) '' | tr ' ' '-')" "$C_0"
+    local row scope pad
+    for row in "${rows[@]}"; do
+        IFS=$'\t' read -r name raw_path promo <<< "$row"
+        total=$((total + 1))
+        pad=$(printf '%*s' $((w - ${#name})) '')
+        if [[ "$promo" == "1" ]]; then scope="${C_Y}alias  ${C_0}"; else scope="${C_D}adir   ${C_0}"; fi
+        if [[ -d "$(_daliases_expand_path "$raw_path")" ]]; then
+            printf '  %s%s%s%s %s %s\n' "$C_G" "$name" "$C_0" "$pad" "$scope" "$raw_path"
+        else
+            missing=$((missing + 1))
+            printf '  %s%s%s%s %s %s%s [MISSING]%s\n' "$C_G" "$name" "$C_0" "$pad" "$scope" "$C_R" "$raw_path" "$C_0"
+        fi
+    done
+    printf '\n  %s%d shortcut(s)' "$C_D" "$total"
+    (( missing > 0 )) && printf ' · %d missing' "$missing"
+    printf ' · adir help for more info%s\n\n' "$C_0"
 }
 
 _daliases_go_to() {
