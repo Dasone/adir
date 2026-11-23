@@ -11,7 +11,7 @@
 | `adir history` | Show your last 10 visited shortcuts (newest at the bottom, no duplicates). Move with `↑`/`↓` (or `j`/`k`), `Enter` to jump there, `q`/`Esc` to cancel |
 | `adir pick` / `adir jump` | Open an interactive numbered menu to choose a shortcut and `cd` into it |
 | `adir add <name> <path> [--alias]` | Add a shortcut, optionally promoting it to a standalone shell alias. `.` or any relative path is saved as an absolute path (e.g. `adir add here .`). Names of `adir` commands are reserved and rejected |
-| `adir update <name> <path>` | Update the target directory of an existing shortcut |
+| `adir update <name> <path>` | Update the target directory of an existing shortcut. Like `add`, a relative path such as `.` is saved as an absolute path |
 | `adir del <name>` | Remove a shortcut and any standalone shell alias created for it |
 | `adir alias <name> [on\|off]` | Enable or disable a standalone shell alias outside `adir` (with conflict checking) |
 | `adir check` | Run diagnostics on the registry/alias files and count missing target directories |

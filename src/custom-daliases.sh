@@ -70,6 +70,15 @@ _daliases_read_seq() {
     if [[ -n "${ZSH_VERSION-}" ]]; then IFS= read -rsk2 -t 0.05 "$1"; else IFS= read -rsn2 -t 0.05 "$1"; fi
 }
 
+# Turn a relative path (".", "..", "sub/dir") into an absolute one. Absolute paths,
+# ~ and $VAR paths are returned as typed. Fails if a relative path is not a directory.
+_daliases_absolute_path() {
+    case "$1" in
+        /*|~*|\$*) printf '%s\n' "$1" ;;
+        *) (CDPATH= cd -- "$1" 2>/dev/null && pwd -P) ;;
+    esac
+}
+
 _daliases_check_command_conflict() {
     local name="$1"
     local existing_type
@@ -176,16 +185,11 @@ _daliases_add() {
         echo "'$name' is a reserved adir command and cannot be used as a shortcut name." >&2; return 1
     fi
     # Resolve relative paths (e.g. ".", "..", "sub/dir") to absolute ones
-    case "$raw_path" in
-        /*|~*|\$*) ;;
-        *)
-            local resolved
-            resolved="$(cd -- "$raw_path" 2>/dev/null && pwd -P)" || {
-                echo "Directory does not exist: $raw_path" >&2; return 1
-            }
-            raw_path="$resolved"
-            ;;
-    esac
+    local resolved
+    resolved="$(_daliases_absolute_path "$raw_path")" || {
+        echo "Directory does not exist: $raw_path" >&2; return 1
+    }
+    raw_path="$resolved"
     local expanded
     expanded="$(_daliases_expand_path "$raw_path")"
     if [[ ! -d "$expanded" ]]; then
@@ -203,7 +207,11 @@ _daliases_add() {
 _daliases_update() {
     local name="$1" raw_path="$2"
     [[ -z "$name" || -z "$raw_path" ]] && { echo "Usage: adir update <name> <path>" >&2; return 1; }
-    local expanded
+    local resolved expanded
+    resolved="$(_daliases_absolute_path "$raw_path")" || {
+        echo "Directory does not exist: $raw_path" >&2; return 1
+    }
+    raw_path="$resolved"
     expanded="$(_daliases_expand_path "$raw_path")"
     [[ -d "$expanded" ]] || { echo "Directory does not exist: $raw_path" >&2; return 1; }
     [[ -n "$(_daliases_get_path "$name")" ]] || { echo "Shortcut '$name' not found." >&2; return 1; }

@@ -13,7 +13,7 @@ When you *do* want a shortcut to work as a direct command outside `adir`, you ca
 ## Features
 
 - **Simple shortcut naming**: Name shortcuts whatever makes sense to you (such as `docs`, `work`, or `api-v2`). Names must start with a letter or digit and may contain letters, digits, `_` and `-`.
-- **Save the current directory**: `adir add <name> .` stores the absolute path of the directory you are in. Any relative path (`..`, `sub/dir`) is resolved to an absolute path when saved.
+- **Save the current directory**: `adir add <name> .` stores the absolute path of the directory you are in. Any relative path (`..`, `sub/dir`) is resolved to an absolute path when saved, in both `adir add` and `adir update`.
 - **Quick jumping**: Jump with `adir <name>` (shorthand for `adir go <name>`), with tab completion for commands and shortcut names, or pick interactively with `adir pick` / `adir jump`.
 - **Reserved command names**: Shortcut names that match an `adir` command (`history`, `list`, `go`, `add`, `update`, `del`, `alias`, `check`, `help`, `pick`, `jump`, and their legacy aliases) are rejected by `adir add`, so `adir <name>` is never ambiguous.
 - **Navigation history**: `adir history` lists your last 10 visited shortcuts (name and path, newest at the bottom, no duplicates). Select one with `↑`/`↓` and press `Enter` to jump. Every `adir go`, `adir <name>` and `adir pick` is recorded.
