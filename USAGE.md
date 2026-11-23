@@ -8,6 +8,7 @@
 | `adir list <name>` | Show details (shortcut, scope, target) for a single shortcut |
 | `adir go <name>` | Jump (`cd`) directly to a shortcut (`Tab` completion supported) |
 | `adir <name>` | Shorthand for `adir go <name>`; built-in command names always take precedence |
+| `adir history` | Show your last 10 visited shortcuts (newest at the bottom, no duplicates). Move with `↑`/`↓` (or `j`/`k`), `Enter` to jump there, `q`/`Esc` to cancel |
 | `adir pick` / `adir jump` | Open an interactive numbered menu to choose a shortcut and `cd` into it |
 | `adir add <name> <path> [--alias]` | Add a shortcut, optionally promoting it to a standalone shell alias. `.` or any relative path is saved as an absolute path (e.g. `adir add here .`). Names of `adir` commands are reserved and rejected |
 | `adir update <name> <path>` | Update the target directory of an existing shortcut |
@@ -46,5 +47,8 @@ adir myproject
 adir add list .
 # 'list' is a reserved adir command and cannot be used as a shortcut name.
 
-# 7. Check for broken/missing directories
+# 7. Revisit a recent shortcut: arrow keys to select, Enter to jump
+adir history
+
+# 8. Check for broken/missing directories
 adir check

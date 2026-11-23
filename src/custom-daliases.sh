@@ -5,6 +5,9 @@ _DALIASES_STORE_DEFAULT="${XDG_CONFIG_HOME:-$HOME/.config}/custom-daliases"
 _DALIASES_DB_DEFAULT="${_DALIASES_STORE_DEFAULT}/dirs.tsv"
 _DALIASES_ALIASES_FILE_DEFAULT="${_DALIASES_STORE_DEFAULT}/shell_aliases.sh"
 
+_DALIASES_HISTORY_MAX=10
+_daliases_history_file() { echo "${DALIASES_HISTORY_FILE:-$(dirname "$(_daliases_db_path)")/history}"; }
+
 _daliases_db_path() { echo "${DALIASES_DB_FILE:-$_DALIASES_DB_DEFAULT}"; }
 _daliases_aliases_file() { echo "${DALIASES_SHELL_ALIASES_FILE:-$_DALIASES_ALIASES_FILE_DEFAULT}"; }
 
@@ -18,7 +21,7 @@ _daliases_ensure_store() {
 }
 
 # Subcommand names that cannot be used as shortcut names (so `adir <name>` is unambiguous)
-_DALIASES_RESERVED_NAMES="go list daliases aliasdir pick jump add adddir update updadir del deldir alias check checkdir help"
+_DALIASES_RESERVED_NAMES="history hist go list daliases aliasdir pick jump add adddir update updadir del deldir alias check checkdir help"
 
 _daliases_is_reserved_name() {
     local w
@@ -247,6 +250,84 @@ _daliases_go_to() {
     expanded="$(_daliases_expand_path "$raw_path")"
     [[ -d "$expanded" ]] || { echo "Target directory does not exist: $raw_path" >&2; return 1; }
     cd "$expanded" || return 1
+    _daliases_history_add "$1"
+}
+
+# Record a visited shortcut: newest last, no duplicates, at most $_DALIASES_HISTORY_MAX entries
+_daliases_history_add() {
+    local hist tmp
+    hist="$(_daliases_history_file)"
+    mkdir -p "$(dirname "$hist")" 2>/dev/null || return 0
+    tmp="$(mktemp 2>/dev/null)" || return 0
+    { [[ -f "$hist" ]] && grep -vxF -- "$1" "$hist"; printf '%s\n' "$1"; } | tail -n "$_DALIASES_HISTORY_MAX" > "$tmp"
+    mv "$tmp" "$hist"
+    return 0
+}
+
+# adir history: arrow-key selector over recently visited shortcuts (bottom = most recent)
+_daliases_history() {
+    local hist name raw_path
+    local names=() paths=()
+    hist="$(_daliases_history_file)"
+    if [[ -f "$hist" ]]; then
+        while IFS= read -r name; do
+            [[ -z "$name" ]] && continue
+            raw_path="$(_daliases_get_path "$name")"
+            [[ -n "$raw_path" ]] || continue   # shortcut was deleted since
+            names+=("$name"); paths+=("$raw_path")
+        done < "$hist"
+    fi
+    local count="${#names[@]}"
+    [[ "$count" -gt 0 ]] || { echo "No history yet. Navigate with: adir go <name>"; return 0; }
+
+    local i w=0
+    for ((i = 0; i < count; i++)); do (( ${#names[i]} > w )) && w=${#names[i]}; done
+
+    # Not a terminal: just print the list
+    if [[ ! -t 0 || ! -t 1 ]]; then
+        for ((i = 0; i < count; i++)); do printf '%-*s  %s\n' "$w" "${names[i]}" "${paths[i]}"; done
+        return 0
+    fi
+
+    local sel=$((count - 1)) key rest first=1
+    local rev=$'\033[7m' off=$'\033[0m' dim=$'\033[2m' red=$'\033[31m'
+
+    _adir_hist_draw() {
+        local j line
+        if [[ "$first" -eq 0 ]]; then printf '\033[%dA' $((count + 1)); fi
+        first=0
+        for ((j = 0; j < count; j++)); do
+            line="$(printf '%-*s  %s' "$w" "${names[j]}" "${paths[j]}")"
+            [[ -d "$(_daliases_expand_path "${paths[j]}")" ]] || line="${line} [MISSING]"
+            if [[ "$j" -eq "$sel" ]]; then
+                printf '\r\033[K %s> %s%s\n' "$rev" "$line" "$off"
+            else
+                printf '\r\033[K   %s\n' "$line"
+            fi
+        done
+        printf '\r\033[K%s  ↑/↓ move · Enter go · q/Esc cancel%s\n' "$dim" "$off"
+    }
+
+    printf '\033[?25l'
+    _adir_hist_draw
+    while true; do
+        IFS= read -rsn1 key || { printf '\033[?25h'; return 1; }
+        case "$key" in
+            $'\033')
+                rest=""
+                read -rsn2 -t 0.05 rest || true
+                case "$rest" in
+                    '[A'|'OA') (( sel > 0 )) && sel=$((sel - 1)) ;;
+                    '[B'|'OB') (( sel < count - 1 )) && sel=$((sel + 1)) ;;
+                    '') printf '\033[?25h'; return 0 ;;
+                esac ;;
+            k) (( sel > 0 )) && sel=$((sel - 1)) ;;
+            j) (( sel < count - 1 )) && sel=$((sel + 1)) ;;
+            q) printf '\033[?25h'; return 0 ;;
+            '') printf '\033[?25h'; _daliases_go_to "${names[sel]}"; return $? ;;
+        esac
+        _adir_hist_draw
+    done
 }
 
 _daliases_pick_and_cd() {
@@ -302,6 +383,7 @@ ${b}COMMANDS${r}
   ${g}adir <name>${r}             Shorthand for ${d}adir go <name>${r} (command names are reserved)
   ${g}adir pick${r} / ${g}adir jump${r}   Interactive numbered picker to select and ${d}cd${r}
   ${g}adir list <name>${r}        Show details for one shortcut
+  ${g}adir history${r}            Pick from your last 10 visited shortcuts (${b}↑/↓${r} + ${b}Enter${r})
   ${g}adir add <name> <path>${r}  Save a new shortcut (${d}add --alias${r} to also make alias)
   ${g}adir update <name> <path>${r}
                             Update an existing shortcut's target directory
@@ -339,6 +421,7 @@ adir() {
         go) _daliases_go_to "$2" ;;
         list|daliases|aliasdir) _daliases_list "$2" ;;
         pick|jump) _daliases_pick_and_cd ;;
+        history|hist) _daliases_history ;;
         add|adddir) shift; _daliases_add "$@" ;;
         update|updadir) _daliases_update "$2" "$3" ;;
         del|deldir) _daliases_del "$2" ;;
@@ -361,7 +444,7 @@ _adir_complete() {
     local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
     COMPREPLY=()
     if [[ "$COMP_CWORD" -eq 1 ]]; then
-        mapfile -t COMPREPLY < <(compgen -W "list go pick jump add update del alias check help $(_daliases_list_names)" -- "$cur")
+        mapfile -t COMPREPLY < <(compgen -W "list go pick jump history add update del alias check help $(_daliases_list_names)" -- "$cur")
         return 0
     fi
     case "$prev" in
