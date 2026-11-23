@@ -1,4 +1,4 @@
-# custom-daliases
+# adir
 
 A lightweight directory-navigation tool (`adir`) for **Bash and Zsh**, for saving named directory shortcuts, jumping with tab completion or an interactive picker, checking for broken paths, and optionally promoting shortcuts to standalone shell aliases with built-in command conflict checks.
 
@@ -6,7 +6,7 @@ A lightweight directory-navigation tool (`adir`) for **Bash and Zsh**, for savin
 
 ## Overview
 
-Instead of scattering dozens of `cd` aliases across your shell dotfiles, `custom-daliases` stores shortcuts in a registry (`~/.config/custom-daliases/dirs.tsv` by default) and lets you jump to them through `adir`.
+Instead of scattering dozens of `cd` aliases across your shell dotfiles, shortcuts are stored in a registry (`~/.config/custom-daliases/dirs.tsv` by default) and you jump to them with the `adir` command.
 
 When you *do* want a shortcut to work as a direct command outside `adir`, you can opt in with `--alias` or `adir alias <name> on`. Before creating a standalone alias, `adir` checks existing builtins, keywords, functions, aliases, and `PATH` entries so it won't shadow existing Linux commands.
 
@@ -78,8 +78,8 @@ More detail on every command is in [USAGE.md](USAGE.md).
 Works in **Bash** (Linux, WSL2, macOS, Git Bash) and **Zsh**. Requires `python3`.
 
 ```bash
-git clone https://github.com/Dasone/custom-daliases.git
-cd custom-daliases
+git clone https://github.com/Dasone/adir.git
+cd adir
 bash install.sh
 source /etc/profile.d/custom-daliases.sh 2>/dev/null || source ~/.custom-daliases.sh
 ```
