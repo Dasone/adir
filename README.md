@@ -43,12 +43,12 @@ bash install.sh
 source /etc/profile.d/custom-daliases.sh 2>/dev/null || source ~/.custom-daliases.sh
 ```
 
-`install.sh` installs the script system-wide to `/etc/profile.d/` (or to `~/.custom-daliases.sh` when it can't write there).
+`install.sh` installs the script system-wide to `/etc/profile.d/` (or to `~/.custom-daliases.sh` when it can't write there) and adds a `source` line to your shell startup file, once, so every new terminal has `adir`:
 
-- **Bash:** login shells pick it up automatically. For non-login interactive shells, source it from `~/.bashrc`.
-- **Zsh:** zsh doesn't read `/etc/profile.d`, so `install.sh` also adds a `source` line to `~/.zshrc` (only once) when zsh is installed. Tab completion registers itself automatically, whether the line comes before or after `compinit`.
+- **Bash:** a line is added to `~/.bashrc`. This matters because `/etc/profile.d` is only read by *login* shells, while most terminal tabs start non-login interactive shells.
+- **Zsh:** if you use zsh (`~/.zshrc` exists or zsh is your login shell), a line is added to `~/.zshrc`. Tab completion registers itself automatically, whether the line comes before or after `compinit`.
 
-Run the `source` command above in your current terminal to start using `adir` immediately; new shells load it by themselves.
+Run the `source` command above to start using `adir` in the terminal you installed from; new terminals load it by themselves.
 
 ## How it compares
 
