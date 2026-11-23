@@ -43,3 +43,7 @@ source /etc/profile.d/custom-daliases.sh 2>/dev/null || source ~/.custom-daliase
 
 ## Starting a new shell session
 Running install.sh installs the script for future/login sessions. Run source in your current terminal session to load adir immediately. If a non-login interactive shell doesn't source /etc/profile.d/ automatically, you can also source it from ~/.bashrc.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
